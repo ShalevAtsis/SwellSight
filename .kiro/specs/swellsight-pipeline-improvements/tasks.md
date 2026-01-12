@@ -61,32 +61,32 @@ This implementation plan focuses on enhancing the existing 8-notebook SwellSight
   - **Property 6: Dynamic Batch Sizing Adaptation**
   - **Validates: Requirements 2.1**
 
-- [ ] 4. Update notebook 03: Depth-Anything-V2 Extraction
-  - [ ] 4.1 Replace MiDaS with Depth-Anything-V2-Large model
+- [-] 4. Update notebook 03: Depth-Anything-V2 Extraction
+  - [x] 4.1 Replace MiDaS with Depth-Anything-V2-Large model
     - Implement Depth-Anything-V2 model loading and inference
     - Add memory optimization for large model processing
     - Update depth map quality validation for new model output
     - _Requirements: 2.3, 3.2, 6.1_
 
-  - [ ] 4.2 Add advanced error handling and memory management
+  - [x] 4.2 Add advanced error handling and memory management
     - Implement GPU memory error handling with CPU fallback
     - Add individual image error handling with batch continuation
     - Create comprehensive depth quality assessment
     - _Requirements: 4.2, 4.3, 3.2_
 
-- [ ] 4.3 Write property test for depth map quality assessment
+- [x] 4.3 Write property test for depth map quality assessment
 
   - **Property 12: Depth Map Quality Assessment**
   - **Validates: Requirements 3.2**
 
 
-- [ ] 4.4 Write property test for GPU fallback mechanism
+- [x] 4.4 Write property test for GPU fallback mechanism
 
   - **Property 18: GPU Fallback Mechanism**
   - **Validates: Requirements 4.3**
 
-- [ ] 5. Enhance notebook 04: Data Augmentation System
-  - [ ] 5.1 Optimize augmentation parameter generation for FLUX
+- [-] 5. Enhance notebook 04: Data Augmentation System
+  - [-] 5.1 Optimize augmentation parameter generation for FLUX
     - Update parameter ranges and distributions for FLUX.1-dev model
     - Implement parameter validation and quality checks
     - Add configuration snapshot saving for reproducibility
@@ -98,7 +98,8 @@ This implementation plan focuses on enhancing the existing 8-notebook SwellSight
     - Create parameter diversity analysis and reporting
     - _Requirements: 2.4, 5.2, 3.3_
 
-- [ ]* 5.3 Write property test for parameter validation
+- [ ] 5.3 Write property test for parameter validation
+
   - **Property 37: Parameter Validation and Warnings**
   - **Validates: Requirements 8.2**
 
