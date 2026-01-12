@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # Development environment
+  swellsight-dev:
+    build:
+      context: .
+      target: development
+    container_name: swellsight-dev
+    volumes:
+      - .:/app
+      - swellsight-data:/app/data
+      - swellsight-outputs:/app/outputs
+      - swellsight-logs:/app/logs
+    ports:
+      - "8888:8888"  # Jupyter
+      - "6006:6006"  # TensorBoard
+    environment:
+      - PYTHONPATH=/app/src
+      - CUDA_VISIBLE_DEVICES=0
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+    profiles:
+      - dev
+
+  # Training environment
+  swellsight-train:
+    build:
+      context: .
+      target: training
+    container_name: swellsight-train
+    volumes:
+      - swellsight-data:/app/data
+      - swellsight-outputs:/app/outputs
+      - swellsight-logs:/app/logs
+      - swellsight-checkpoints:/app/checkpoints
+    environment:
+      - PYTHONPATH=/app/src
+      - CUDA_VISIBLE_DEVICES=0
+    command: python scripts/train.py --config configs/training.yaml
+    profiles:
+      - train
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Inference API server
+  swellsight-api:
+    build:
+      context: .
+      target: inference
+    container_name: swellsight-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - swellsight-outputs:/app/outputs
+      - swellsight-logs:/app/logs
+    environment:
+      - PYTHONPATH=/app/src
+      - CUDA_VISIBLE_DEVICES=0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    profiles:
+      - api
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Evaluation service
+  swellsight-eval:
+    build:
+      context: .
+      target: training
+    container_name: swellsight-eval
+    volumes:
+      - swellsight-data:/app/data
+      - swellsight-outputs:/app/outputs
+      - swellsight-logs:/app/logs
+      - swellsight-checkpoints:/app/checkpoints
+    environment:
+      - PYTHONPATH=/app/src
+      - CUDA_VISIBLE_DEVICES=0
+    command: python scripts/evaluate.py --config configs/evaluation.yaml
+    profiles:
+      - eval
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: swellsight-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - swellsight-redis:/data
+    command: redis-server --appendonly yes
+    profiles:
+      - api
+      - cache
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: swellsight-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - swellsight-prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    profiles:
+      - monitoring
+
+volumes:
+  swellsight-data:
+    driver: local
+  swellsight-outputs:
+    driver: local
+  swellsight-logs:
+    driver: local
+  swellsight-checkpoints:
+    driver: local
+  swellsight-redis:
+    driver: local
+  swellsight-prometheus:
+    driver: local
+
+networks:
+  default:
+    name: swellsight-network

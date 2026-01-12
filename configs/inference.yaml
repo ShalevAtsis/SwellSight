@@ -1,0 +1,71 @@
+# Inference-specific configuration for SwellSight Wave Analysis System
+
+# Inherit from default config
+_base_: "default.yaml"
+
+model:
+  # Optimized for inference
+  depth_model_size: "base"  # Smaller for faster inference
+  depth_precision: "fp16"
+  backbone_model: "dinov2-base"
+  freeze_backbone: true
+  input_resolution: [518, 518]
+
+system:
+  # Inference optimization
+  use_gpu: true
+  max_processing_time: 5.0  # Stricter time limit for real-time
+  confidence_threshold: 0.6  # Slightly lower for more predictions
+  batch_inference: true
+  max_batch_size: 8
+  
+  # Memory optimization
+  memory_efficient: true
+  cache_models: true
+  cleanup_after_batch: true
+
+api:
+  # API server settings
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  max_request_size: 10485760  # 10MB
+  timeout: 30
+  
+  # Rate limiting
+  rate_limit_enabled: true
+  requests_per_minute: 60
+  
+  # Caching
+  response_cache_enabled: true
+  cache_ttl_seconds: 300
+
+processing:
+  # Image processing
+  auto_resize: true
+  quality_enhancement: true
+  ocean_detection: true
+  
+  # Output formatting
+  include_confidence: true
+  include_timing: true
+  include_warnings: true
+  
+  # Units
+  default_height_unit: "meters"
+  include_both_units: true
+
+monitoring:
+  # Performance monitoring
+  track_inference_time: true
+  track_memory_usage: true
+  track_gpu_utilization: true
+  
+  # Health checks
+  health_check_interval: 60
+  model_warmup: true
+  
+  # Logging
+  log_level: "INFO"
+  log_requests: true
+  log_performance: true

@@ -1,0 +1,38 @@
+# Training dependencies for SwellSight Wave Analysis System
+
+# Include base dependencies
+-r base.txt
+
+# Training frameworks and optimizers
+accelerate>=0.21.0
+deepspeed>=0.10.0
+
+# Experiment tracking
+tensorboard>=2.13.0
+wandb>=0.15.0
+
+# Advanced optimizers
+timm>=0.9.0
+lion-pytorch>=0.1.0
+
+# Data loading and augmentation
+webdataset>=0.2.0
+kornia>=0.7.0
+
+# Model utilities
+torchmetrics>=1.0.0
+pytorch-lightning>=2.0.0
+
+# Distributed training
+fairscale>=0.4.13
+
+# Memory optimization
+bitsandbytes>=0.41.0
+
+# Hyperparameter optimization
+optuna>=3.3.0
+ray[tune]>=2.6.0
+
+# Profiling and debugging
+py-spy>=0.3.14
+memory-profiler>=0.61.0

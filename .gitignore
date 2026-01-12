@@ -1,11 +1,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*/__pycache__/
-utils/__pycache__/
 *.py[cod]
 *$py.class
-*.pyc
-*.pyo
 
 # C extensions
 *.so
@@ -53,7 +49,6 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-.__pycache__
 cover/
 
 # Translations
@@ -159,61 +154,42 @@ cython_debug/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be added to the global gitignore or merged into this project gitignore.  For a PyCharm
-#  project, it is recommended to ignore the entire .idea directory.
+#  be added to the global gitignore or merged into this project gitignore.  For a PyTorch
+#  research project template, see https://github.com/PyTorchLightning/deep-learning-project-template
 .idea/
 
-# VS Code
-.vscode/
-
-# Machine Learning / Data Science specific
-# Datasets
+# SwellSight specific
+# Data directories
 data/raw/
-data/external/
-*.csv
-*.tsv
-*.json
-*.parquet
-*.h5
-*.hdf5
-*.pkl
-*.pickle
+data/processed/
+data/synthetic/
+data/models/
+data/evaluation/
+
+# Output directories
+outputs/
+logs/
+checkpoints/
+evaluation_reports/
 
 # Model files
-*.pt
 *.pth
+*.pt
 *.ckpt
-*.pb
-*.h5
-*.hdf5
-*.joblib
-*.model
+*.safetensors
 *.bin
 
-# Checkpoints and logs
-checkpoints/
-logs/
-runs/
-wandb/
-mlruns/
-.mlflow/
+# Large files
+*.h5
+*.hdf5
+*.npz
 
-# Outputs
-outputs/
-results/
-plots/
-figures/
+# Temporary files
+tmp/
+temp/
+.tmp/
 
-# Jupyter notebook outputs (keep notebooks but ignore outputs)
-*.ipynb_checkpoints/
-
-# Large files that shouldn't be in git
-*.zip
-*.tar.gz
-*.rar
-*.7z
-
-# OS generated files
+# OS specific
 .DS_Store
 .DS_Store?
 ._*
@@ -222,47 +198,36 @@ figures/
 ehthumbs.db
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
+# IDE specific
+.vscode/
 *.swp
 *.swo
 *~
 
-# Project specific
-# Keep config.json but ignore sensitive configs
-config_local.json
-config_prod.json
-secrets.json
+# Jupyter notebook outputs
+*.ipynb
 
-# Ignore hypothesis testing artifacts (but keep the directory structure)
-.hypothesis/examples/
-.hypothesis/unicode_data/
-.hypothesis/constants/
+# Keep only clean notebooks
+!notebooks/*.ipynb
 
-# Ignore compiled models and large artifacts
-models/*.pt
-models/*.pth
-models/*.ckpt
-models/*.bin
+# Weights & Biases
+wandb/
 
-# Ignore processed data but keep structure
-data/processed/*
-!data/processed/.gitkeep
-data/synthetic/*
-!data/synthetic/.gitkeep
-data/depth_maps/*
-!data/depth_maps/.gitkeep
+# MLflow
+mlruns/
 
-# Ignore logs but keep directory
-logs/*
-!logs/.gitkeep
+# TensorBoard
+runs/
 
-# Ignore outputs but keep directory
-outputs/*
-!outputs/.gitkeep
-utils/__pycache__/error_handler.cpython-313.pyc
-utils/__pycache__/progress_tracker.cpython-313.pyc
-/utils/__pycache__
-/utils
-/utils
+# Hydra
+outputs/
+.hydra/
+
+# DVC
+.dvc/
+
+# Hugging Face cache
+.cache/huggingface/
+
+# CUDA cache
+.nv/

@@ -1,0 +1,33 @@
+# Inference dependencies for SwellSight Wave Analysis System
+
+# Include base dependencies
+-r base.txt
+
+# Web framework
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+
+# HTTP client
+httpx>=0.24.0
+aiofiles>=23.0.0
+
+# Model optimization
+onnx>=1.14.0
+onnxruntime>=1.15.0
+tensorrt>=8.6.0  # Optional, for NVIDIA GPUs
+
+# Caching
+redis>=4.6.0
+diskcache>=5.6.0
+
+# API utilities
+python-multipart>=0.0.6
+python-jose[cryptography]>=3.3.0
+
+# Monitoring
+prometheus-client>=0.17.0
+sentry-sdk>=1.29.0
+
+# Production utilities
+gunicorn>=21.0.0
+supervisor>=4.2.0

@@ -1,0 +1,104 @@
+# Evaluation-specific configuration for SwellSight Wave Analysis System
+
+# Inherit from default config
+_base_: "default.yaml"
+
+evaluation:
+  # Metrics configuration
+  height_accuracy_threshold: 0.2  # ±0.2m accuracy target
+  direction_accuracy_target: 0.9   # 90% accuracy target
+  breaking_accuracy_target: 0.92   # 92% accuracy target
+  
+  # Confidence calibration
+  calibration_bins: 10
+  reliability_diagram: true
+  
+  # Performance benchmarking
+  benchmark_iterations: 100
+  warmup_iterations: 10
+  measure_memory: true
+  measure_gpu_utilization: true
+  
+  # Test data
+  test_batch_size: 1
+  num_test_samples: 1000
+  include_synthetic_test: true
+  include_real_test: true
+
+reporting:
+  # Report generation
+  output_dir: "evaluation_reports"
+  generate_plots: true
+  plot_format: "png"
+  plot_dpi: 300
+  
+  # Visualizations
+  confusion_matrices: true
+  calibration_curves: true
+  performance_charts: true
+  sample_predictions: true
+  
+  # Export formats
+  json_report: true
+  html_report: true
+  pdf_report: false
+  
+  # Comparison
+  enable_model_comparison: true
+  baseline_models: []
+
+data_evaluation:
+  # Data quality assessment
+  assess_image_quality: true
+  assess_ocean_coverage: true
+  assess_lighting_conditions: true
+  
+  # Distribution analysis
+  compare_synthetic_real: true
+  statistical_tests: ["ks_test", "chi2_test"]
+  distribution_plots: true
+  
+  # Insights generation
+  generate_recommendations: true
+  quality_thresholds:
+    resolution: [640, 480]
+    contrast: 0.3
+    brightness: [0.2, 0.8]
+    ocean_coverage: 0.4
+
+model_evaluation:
+  # Accuracy evaluation
+  per_class_metrics: true
+  confusion_matrices: true
+  roc_curves: false  # Not applicable for regression
+  
+  # Performance evaluation
+  inference_speed: true
+  memory_profiling: true
+  throughput_testing: true
+  batch_size_analysis: [1, 4, 8, 16, 32]
+  
+  # Interpretability
+  attention_visualization: true
+  feature_importance: true
+  failure_analysis: true
+  
+  # Robustness testing
+  noise_robustness: true
+  lighting_robustness: true
+  resolution_robustness: true
+
+system:
+  # Evaluation system settings
+  use_gpu: true
+  deterministic: true  # For reproducible results
+  seed: 42
+  
+  # Resource limits
+  max_memory_gb: 16
+  timeout_per_sample: 10
+  
+  # Logging
+  log_level: "INFO"
+  detailed_logging: true
+  save_intermediate_results: true

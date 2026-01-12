@@ -1,0 +1,45 @@
+# Default configuration for SwellSight Wave Analysis System
+
+model:
+  depth_model_size: "large"
+  depth_precision: "fp16"
+  backbone_model: "dinov2-base"
+  freeze_backbone: true
+  input_resolution: [518, 518]
+  num_classes_direction: 3
+  num_classes_breaking: 3
+
+training:
+  batch_size: 32
+  learning_rate: 0.0001
+  num_epochs: 100
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+  use_mixed_precision: true
+  save_checkpoint_every: 10
+  validate_every: 5
+  early_stopping_patience: 20
+
+data:
+  min_resolution: [640, 480]
+  max_resolution: [3840, 2160]
+  quality_threshold: 0.5
+  augmentation_enabled: true
+  synthetic_data_ratio: 0.7
+  target_resolution: [518, 518]
+
+system:
+  use_gpu: true
+  max_processing_time: 30.0
+  confidence_threshold: 0.7
+  log_level: "INFO"
+  output_dir: "outputs"
+  num_workers: 4
+  pin_memory: true
+
+paths:
+  data_dir: "data"
+  models_dir: "data/models"
+  checkpoints_dir: "checkpoints"
+  logs_dir: "logs"
+  evaluation_dir: "evaluation"

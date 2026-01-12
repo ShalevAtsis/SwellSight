@@ -1,0 +1,44 @@
+# Base dependencies for SwellSight Wave Analysis System
+
+# Core ML frameworks
+torch>=2.0.0
+torchvision>=0.15.0
+transformers>=4.30.0
+diffusers>=0.20.0
+
+# Computer vision
+opencv-python>=4.8.0
+Pillow>=10.0.0
+scikit-image>=0.21.0
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# Data handling
+pandas>=2.0.0
+h5py>=3.9.0
+
+# Configuration and utilities
+pyyaml>=6.0
+pydantic>=2.0.0
+click>=8.1.0
+tqdm>=4.65.0
+rich>=13.0.0
+
+# Logging and monitoring
+loguru>=0.7.0
+psutil>=5.9.0
+
+# Image processing and augmentation
+albumentations>=1.3.0
+imageio>=2.31.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+
+# File I/O
+pathlib2>=2.3.7

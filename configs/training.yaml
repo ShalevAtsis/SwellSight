@@ -1,0 +1,66 @@
+# Training-specific configuration for SwellSight Wave Analysis System
+
+# Inherit from default config
+_base_: "default.yaml"
+
+training:
+  batch_size: 64
+  learning_rate: 0.0002
+  num_epochs: 200
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+  use_mixed_precision: true
+  save_checkpoint_every: 5
+  validate_every: 2
+  early_stopping_patience: 30
+  
+  # Training strategy
+  sim_to_real: true
+  synthetic_pretraining_epochs: 50
+  real_data_finetuning_epochs: 150
+  
+  # Loss weighting
+  height_loss_weight: 1.0
+  direction_loss_weight: 1.0
+  breaking_loss_weight: 1.0
+  adaptive_weighting: true
+  
+  # Optimizer settings
+  optimizer: "adamw"
+  betas: [0.9, 0.999]
+  eps: 1e-8
+  
+  # Scheduler settings
+  scheduler: "cosine"
+  warmup_epochs: 10
+  min_lr: 1e-6
+
+data:
+  # Training data settings
+  train_split: 0.7
+  val_split: 0.2
+  test_split: 0.1
+  
+  # Augmentation settings
+  augmentation_enabled: true
+  weather_effects_prob: 0.3
+  lighting_changes_prob: 0.4
+  preserve_scale: true
+  
+  # Synthetic data generation
+  synthetic_data_ratio: 0.8
+  synthetic_batch_size: 1000
+  generation_diversity: "high"
+
+system:
+  # Training system settings
+  use_gpu: true
+  mixed_precision: true
+  gradient_checkpointing: false
+  compile_model: false  # PyTorch 2.0 compilation
+  
+  # Monitoring
+  log_every_n_steps: 100
+  save_samples_every: 1000
+  tensorboard_logging: true
+  wandb_logging: false
