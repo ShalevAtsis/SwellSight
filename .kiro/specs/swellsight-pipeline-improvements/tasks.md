@@ -103,24 +103,26 @@ This implementation plan focuses on enhancing the existing 8-notebook SwellSight
   - **Property 37: Parameter Validation and Warnings**
   - **Validates: Requirements 8.2**
 
-- [ ] 6. Update notebook 05: FLUX ControlNet Synthetic Generation
-  - [ ] 6.1 Replace Stable Diffusion with FLUX.1-dev and FLUX ControlNet
+- [x] 6. Update notebook 05: FLUX ControlNet Synthetic Generation
+  - [x] 6.1 Replace Stable Diffusion with FLUX.1-dev and FLUX ControlNet
     - Implement FLUX.1-dev model loading with ControlNet-Depth integration
     - Add mixed precision training support for improved performance
     - Update synthetic image generation pipeline for FLUX architecture
     - _Requirements: 6.1, 2.1, 3.3_
 
-  - [ ] 6.2 Implement advanced memory management and quality validation
+  - [x] 6.2 Implement advanced memory management and quality validation
     - Add dynamic batch sizing for FLUX generation
     - Implement synthetic vs real data distribution comparison
     - Create comprehensive generation quality assessment
     - _Requirements: 2.1, 3.3, 3.4_
 
-- [ ]* 6.3 Write property test for synthetic data distribution comparison
+- [x] 6.3 Write property test for synthetic data distribution comparison
+
   - **Property 13: Synthetic Data Distribution Comparison**
   - **Validates: Requirements 3.3**
 
-- [ ]* 6.4 Write property test for mixed precision training
+- [x] 6.4 Write property test for mixed precision training
+
   - **Property 26: Mixed Precision Training Adaptation**
   - **Validates: Requirements 6.1**
 
