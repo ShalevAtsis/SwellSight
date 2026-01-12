@@ -1,24 +1,82 @@
 {
   "pipeline": {
     "name": "swellsight_pipeline",
-    "version": "1.0",
-    "created": "2024-01-12T00:00:00Z"
+    "version": "2.0",
+    "created": "2024-01-12T00:00:00Z",
+    "description": "Enhanced SwellSight pipeline with Depth-Anything-V2 and FLUX.1-dev support"
   },
   "processing": {
     "batch_size": "auto",
     "max_images": 1000,
     "quality_threshold": 0.7,
-    "memory_limit_gb": "auto"
+    "memory_limit_gb": "auto",
+    "image_resolution": {
+      "default": 512,
+      "max": 1024,
+      "min": 256
+    },
+    "parallel_workers": "auto"
   },
   "models": {
-    "depth_model": "depth-anything/Depth-Anything-V2-Large",
-    "base_model": "black-forest-labs/FLUX.1-dev",
-    "controlnet_model": "Shakker-Labs/FLUX.1-dev-ControlNet-Depth",
-    "mixed_precision": true
+    "depth_model": {
+      "name": "depth-anything/Depth-Anything-V2-Large",
+      "type": "depth_estimation",
+      "input_size": [518, 518],
+      "output_channels": 1,
+      "precision": "fp16"
+    },
+    "base_model": {
+      "name": "black-forest-labs/FLUX.1-dev",
+      "type": "text_to_image",
+      "input_size": [1024, 1024],
+      "guidance_scale": 3.5,
+      "num_inference_steps": 28,
+      "precision": "fp16"
+    },
+    "controlnet_model": {
+      "name": "Shakker-Labs/FLUX.1-dev-ControlNet-Depth",
+      "type": "controlnet",
+      "conditioning_scale": 0.6,
+      "control_guidance_start": 0.0,
+      "control_guidance_end": 1.0,
+      "precision": "fp16"
+    },
+    "mixed_precision": true,
+    "enable_xformers": true,
+    "enable_flash_attention": false,
+    "gradient_checkpointing": false,
+    "cpu_offload": false
   },
   "paths": {
     "data_dir": "./data",
     "output_dir": "./outputs",
-    "checkpoint_dir": "./checkpoints"
+    "checkpoint_dir": "./checkpoints",
+    "models_cache_dir": "./models",
+    "logs_dir": "./logs"
+  },
+  "hardware": {
+    "auto_detect": true,
+    "gpu_memory_fraction": 0.9,
+    "cpu_threads": "auto",
+    "memory_growth": true
+  },
+  "optimizations": {
+    "use_xformers": "auto",
+    "use_flash_attention": "auto",
+    "gradient_checkpointing": "auto",
+    "cpu_offload": "auto",
+    "compile_models": false,
+    "cache_models": true
+  },
+  "validation": {
+    "validate_inputs": true,
+    "quality_checks": true,
+    "memory_monitoring": true,
+    "progress_tracking": true
+  },
+  "logging": {
+    "level": "INFO",
+    "save_logs": true,
+    "log_file": "pipeline.log"
   }
 }

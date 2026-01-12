@@ -12,7 +12,8 @@ This implementation plan focuses on enhancing the existing 8-notebook SwellSight
   - Add shared progress tracking and reporting utilities
   - _Requirements: 1.3, 8.1, 8.2_
 
-- [ ]* 1.1 Write property test for configuration loading
+- [x] 1.1 Write property test for configuration loading
+
   - **Property 36: Configuration Loading with Defaults**
   - **Validates: Requirements 8.1**
 
@@ -20,13 +21,13 @@ This implementation plan focuses on enhancing the existing 8-notebook SwellSight
   - **Property 37: Parameter Validation and Warnings**
   - **Validates: Requirements 8.2**
 
-- [ ] 2. Enhance notebook 01: Setup and Installation
-  - [ ] 2.1 Update dependency installation for new models (Depth-Anything-V2, FLUX.1-dev)
+- [x] 2. Enhance notebook 01: Setup and Installation
+  - [x] 2.1 Update dependency installation for new models (Depth-Anything-V2, FLUX.1-dev)
     - Add transformers, diffusers, and FLUX-specific dependencies
     - Update GPU detection and memory optimization for FLUX requirements
     - _Requirements: 2.1, 2.2, 8.4_
 
-  - [ ] 2.2 Implement centralized configuration management
+  - [x] 2.2 Implement centralized configuration management
     - Create config.json with new model specifications
     - Add hardware detection and automatic configuration adjustment
     - Implement configuration validation and default value handling
