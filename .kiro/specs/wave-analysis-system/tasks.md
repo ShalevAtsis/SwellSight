@@ -130,30 +130,30 @@ swellsight-wave-analysis/
   - **Property 1: Configuration Validation**
   - **Validates: Requirements 8.1, 8.2**
 
-- [ ] 2. Implement Stage A: Depth Extraction Engine
-  - [ ] 2.1 Create Depth-Anything-V2 integration
+- [x] 2. Implement Stage A: Depth Extraction Engine
+  - [x] 2.1 Create Depth-Anything-V2 integration
     - Implement DepthExtractor class with Hugging Face Transformers integration
     - Add support for 518×518 input resolution and FP16 precision
     - Implement image preprocessing and normalization pipeline
     - _Requirements: 2.1, 2.2, 2.3_
 
-  - [ ] 2.2 Write property test for depth map quality assessment
+  - [x] 2.2 Write property test for depth map quality assessment
     - **Property 4: Depth Map Edge Preservation**
     - **Property 5: Water Texture Capture**
     - **Property 6: Far-Field Depth Sensitivity**
     - **Validates: Requirements 2.1, 2.2, 2.3**
 
-  - [ ] 2.3 Implement depth map normalization and validation
+  - [x] 2.3 Implement depth map normalization and validation
     - Create depth map normalization to enhance wave-ocean contrast
     - Implement statistical quality assessment metrics
     - Add edge preservation and texture capture validation
     - _Requirements: 2.4, 2.5_
 
-  - [ ] 2.4 Write property test for depth map normalization
+  - [x] 2.4 Write property test for depth map normalization
     - **Property 7: Depth Map Normalization**
     - **Validates: Requirements 2.4**
 
-- [ ] 3. Implement beach cam image processing
+- [-] 3. Implement beach cam image processing
   - [ ] 3.1 Create image input validation and preprocessing
     - Implement BeachCamImage class with format support (JPEG, PNG, WebP)
     - Add resolution validation (480p-4K) and quality assessment
