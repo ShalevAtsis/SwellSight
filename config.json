@@ -1,0 +1,24 @@
+{
+  "pipeline": {
+    "name": "swellsight_pipeline",
+    "version": "1.0",
+    "created": "2024-01-12T00:00:00Z"
+  },
+  "processing": {
+    "batch_size": "auto",
+    "max_images": 1000,
+    "quality_threshold": 0.7,
+    "memory_limit_gb": "auto"
+  },
+  "models": {
+    "depth_model": "depth-anything/Depth-Anything-V2-Large",
+    "base_model": "black-forest-labs/FLUX.1-dev",
+    "controlnet_model": "Shakker-Labs/FLUX.1-dev-ControlNet-Depth",
+    "mixed_precision": true
+  },
+  "paths": {
+    "data_dir": "./data",
+    "output_dir": "./outputs",
+    "checkpoint_dir": "./checkpoints"
+  }
+}
