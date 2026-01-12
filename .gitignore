@@ -1,7 +1,11 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+*/__pycache__/
+utils/__pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
 
 # C extensions
 *.so
@@ -49,6 +53,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.__pycache__
 cover/
 
 # Translations
@@ -256,3 +261,8 @@ logs/*
 # Ignore outputs but keep directory
 outputs/*
 !outputs/.gitkeep
+utils/__pycache__/error_handler.cpython-313.pyc
+utils/__pycache__/progress_tracker.cpython-313.pyc
+/utils/__pycache__
+/utils
+/utils

@@ -16,20 +16,23 @@ logger = logging.getLogger(__name__)
 class ErrorHandler:
     """Handles error recovery and user guidance for pipeline operations"""
     
-    def __init__(self):
+    def __init__(self, max_retries: int = 3, backoff_factor: float = 2.0, initial_delay: float = 1.0):
         self.gpu_available = torch.cuda.is_available()
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.initial_delay = initial_delay
     
-    def retry_with_backoff(self, func: Callable, max_retries: int = 3, 
-                          backoff_factor: float = 2.0, 
-                          initial_delay: float = 1.0) -> Any:
+    def retry_with_backoff(self, func: Callable, max_retries: Optional[int] = None, 
+                          backoff_factor: Optional[float] = None, 
+                          initial_delay: Optional[float] = None) -> Any:
         """
         Retry function with exponential backoff
         
         Args:
             func: Function to retry
-            max_retries: Maximum number of retry attempts
-            backoff_factor: Multiplier for delay between retries
-            initial_delay: Initial delay in seconds
+            max_retries: Maximum number of retry attempts (uses instance default if None)
+            backoff_factor: Multiplier for delay between retries (uses instance default if None)
+            initial_delay: Initial delay in seconds (uses instance default if None)
             
         Returns:
             Function result if successful
@@ -37,6 +40,11 @@ class ErrorHandler:
         Raises:
             Exception: Last exception if all retries fail
         """
+        # Use instance defaults if not provided
+        max_retries = max_retries if max_retries is not None else self.max_retries
+        backoff_factor = backoff_factor if backoff_factor is not None else self.backoff_factor
+        initial_delay = initial_delay if initial_delay is not None else self.initial_delay
+        
         last_exception = None
         delay = initial_delay
         
@@ -327,8 +335,8 @@ class ErrorHandler:
 def retry_with_backoff(func: Callable, max_retries: int = 3, 
                       backoff_factor: float = 2.0) -> Any:
     """Retry function with exponential backoff"""
-    handler = ErrorHandler()
-    return handler.retry_with_backoff(func, max_retries, backoff_factor)
+    handler = ErrorHandler(max_retries=max_retries, backoff_factor=backoff_factor)
+    return handler.retry_with_backoff(func)
 
 def handle_gpu_memory_error(operation: str, fallback_func: Optional[Callable] = None) -> Any:
     """Handle GPU memory errors with CPU fallback"""
