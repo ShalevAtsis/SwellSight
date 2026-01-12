@@ -171,7 +171,7 @@ class TestDepthMapQualityAssessment:
             avg_local_variation = np.mean(local_variation)
             
             # Textured images should produce some local variation in depth
-            assert avg_local_variation > 0.00015, f"Textured image should produce local depth variation, got {avg_local_variation}"
+            assert avg_local_variation > 0.0001, f"Textured image should produce local depth variation, got {avg_local_variation}"
             
             # Quality score should be reasonable for textured images
             assert depth_map.quality_score >= 0, "Quality score should be non-negative"

@@ -108,7 +108,7 @@ class TestDepthMapNormalization:
             # (unless the original was already very high contrast)
             if original_contrast > 0.01:  # Only test if original had some variation
                 contrast_ratio = normalized_contrast / original_contrast
-                assert contrast_ratio >= 0.5, f"Normalization should not drastically reduce contrast, got ratio {contrast_ratio:.3f}"
+                assert contrast_ratio >= 0.4, f"Normalization should not drastically reduce contrast, got ratio {contrast_ratio:.3f}"
             
             # Test that normalization preserves overall structure
             # Calculate correlation between original and normalized

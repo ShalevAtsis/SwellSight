@@ -11,7 +11,7 @@ import numpy as np
 from dataclasses import dataclass
 from enum import Enum
 
-from .preprocessing import BeachCamImage
+# from .preprocessing import BeachCamImage
 from ..core.depth_extractor import DepthMap
 from ..core.synthetic_generator import WaveMetrics, SyntheticImage
 

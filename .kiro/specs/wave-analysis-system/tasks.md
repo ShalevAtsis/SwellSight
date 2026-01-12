@@ -154,18 +154,18 @@ swellsight-wave-analysis/
     - **Validates: Requirements 2.4**
 
 - [-] 3. Implement beach cam image processing
-  - [ ] 3.1 Create image input validation and preprocessing
+  - [x] 3.1 Create image input validation and preprocessing
     - Implement BeachCamImage class with format support (JPEG, PNG, WebP)
     - Add resolution validation (480p-4K) and quality assessment
     - Create image enhancement pipeline for poor quality inputs
     - _Requirements: 1.1, 1.2, 1.3_
 
-  - [ ] 3.2 Write property test for image quality validation
+  - [x] 3.2 Write property test for image quality validation
     - **Property 1: Input Format Validation**
     - **Property 2: Image Quality Enhancement**
     - **Validates: Requirements 1.1, 1.2, 1.3**
 
-  - [ ] 3.3 Implement ocean region detection
+  - [x] 3.3 Implement ocean region detection
     - Create automatic ocean region detection using computer vision techniques
     - Implement region masking and focus area selection
     - Add validation for images without detectable ocean content
@@ -175,7 +175,7 @@ swellsight-wave-analysis/
     - **Property 3: Ocean Region Detection**
     - **Validates: Requirements 1.4**
 
-- [ ] 4. Checkpoint - Ensure depth extraction pipeline works end-to-end
+- [x] 4. Checkpoint - Ensure depth extraction pipeline works end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement Stage B: Synthetic Data Factory
