@@ -6,7 +6,7 @@ Preserves sharp wave edges and captures fine-grained water surface texture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Dict, Any
 import numpy as np
 from dataclasses import dataclass
 import torch
@@ -15,6 +15,9 @@ from transformers import pipeline, AutoImageProcessor, AutoModelForDepthEstimati
 from PIL import Image
 import cv2
 import logging
+
+from ..utils.hardware import HardwareManager
+from ..utils.performance import PerformanceOptimizer, OptimizationConfig, PerformanceMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -65,23 +68,40 @@ class DepthExtractor(ABC):
 class DepthAnythingV2Extractor(DepthExtractor):
     """Depth-Anything-V2 implementation for marine environment depth extraction."""
     
-    def __init__(self, model_size: str = "large", precision: str = "fp16", device: Optional[str] = None):
+    def __init__(self, model_size: str = "large", precision: str = "fp16", device: Optional[str] = None, enable_optimization: bool = True):
         """Initialize Depth-Anything-V2 extractor.
         
         Args:
             model_size: Model size variant ("small", "base", "large")
             precision: Precision mode ("fp16", "fp32")
             device: Device to run model on ("cuda", "cpu", or None for auto-detect)
+            enable_optimization: Whether to enable performance optimizations
         """
         self.model_size = model_size
         self.precision = precision
         self.input_resolution = (518, 518)
+        self.enable_optimization = enable_optimization
         
-        # Auto-detect device if not specified
+        # Initialize hardware manager for optimal device selection
+        self.hardware_manager = HardwareManager()
+        
+        # Auto-detect device if not specified using hardware manager
         if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device = str(self.hardware_manager.get_device())
         else:
             self.device = device
+        
+        # Initialize performance optimizer
+        if self.enable_optimization:
+            optimization_config = OptimizationConfig(
+                target_latency_ms=100.0,  # Depth extraction should be faster
+                enable_mixed_precision=(precision == "fp16"),
+                enable_torch_compile=True,
+                batch_size=1
+            )
+            self.performance_optimizer = PerformanceOptimizer(optimization_config)
+        else:
+            self.performance_optimizer = None
             
         # Model configuration
         model_configs = {
@@ -96,13 +116,40 @@ class DepthAnythingV2Extractor(DepthExtractor):
         self.model_name = model_configs[model_size]
         self._model = None
         self._processor = None
+        self._optimized_model = None
         
         logger.info(f"Initializing Depth-Anything-V2 {model_size} on {self.device} with {precision} precision")
+        logger.info(f"Hardware info: {self.hardware_manager.hardware_info}")
+        logger.info(f"Performance optimization: {'enabled' if enable_optimization else 'disabled'}")
         
     def _load_model(self):
-        """Lazy load the model and processor."""
+        """Lazy load the model and processor with hardware optimization."""
         if self._model is None:
             try:
+                # Check memory requirements before loading
+                model_memory_requirements = {
+                    "small": 1.5,  # GB
+                    "base": 2.5,   # GB
+                    "large": 4.0   # GB
+                }
+                
+                required_memory = model_memory_requirements.get(self.model_size, 4.0)
+                
+                if not self.hardware_manager.check_memory_requirements(required_memory):
+                    # Fallback to smaller model or CPU
+                    if self.device == "cuda" and self.model_size == "large":
+                        logger.warning("Insufficient GPU memory for large model, falling back to base model")
+                        self.model_size = "base"
+                        self.model_name = "depth-anything/Depth-Anything-V2-Base-hf"
+                        required_memory = 2.5
+                        
+                        if not self.hardware_manager.check_memory_requirements(required_memory):
+                            logger.warning("Still insufficient memory, falling back to CPU")
+                            self.device = "cpu"
+                    elif self.device == "cuda":
+                        logger.warning("Insufficient GPU memory, falling back to CPU")
+                        self.device = "cpu"
+                
                 # Load processor and model
                 self._processor = AutoImageProcessor.from_pretrained(self.model_name)
                 self._model = AutoModelForDepthEstimation.from_pretrained(self.model_name)
@@ -114,11 +161,41 @@ class DepthAnythingV2Extractor(DepthExtractor):
                     self._model = self._model.half()
                     
                 self._model.eval()
+                
+                # Clean up GPU memory after loading
+                if self.device == "cuda":
+                    self.hardware_manager.cleanup_gpu_memory()
+                
+                # Apply performance optimizations
+                if self.enable_optimization and self.performance_optimizer:
+                    self._optimized_model = self.performance_optimizer.optimize_model(self._model)
+                    
+                    # Warmup the model
+                    input_shape = (3, *self.input_resolution)  # RGB input
+                    self.performance_optimizer.warmup_model(self._optimized_model, input_shape)
+                else:
+                    self._optimized_model = self._model
+                
                 logger.info(f"Successfully loaded {self.model_name} on {self.device}")
+                if self.enable_optimization:
+                    logger.info("Performance optimizations applied to depth model")
                 
             except Exception as e:
                 logger.error(f"Failed to load model {self.model_name}: {e}")
-                raise RuntimeError(f"Model loading failed: {e}")
+                # Try fallback to CPU if GPU loading failed
+                if self.device == "cuda":
+                    logger.warning("GPU loading failed, attempting CPU fallback")
+                    self.device = "cpu"
+                    try:
+                        self._model = AutoModelForDepthEstimation.from_pretrained(self.model_name)
+                        self._model = self._model.to(self.device)
+                        self._model.eval()
+                        logger.info(f"Successfully loaded {self.model_name} on CPU fallback")
+                    except Exception as cpu_e:
+                        logger.error(f"CPU fallback also failed: {cpu_e}")
+                        raise RuntimeError(f"Model loading failed on both GPU and CPU: {e}, {cpu_e}")
+                else:
+                    raise RuntimeError(f"Model loading failed: {e}")
     
     def _preprocess_image(self, image: np.ndarray) -> Tuple[Image.Image, Tuple[int, int]]:
         """Preprocess image for depth extraction.
@@ -229,14 +306,14 @@ class DepthAnythingV2Extractor(DepthExtractor):
         
         return quality_score, edge_preservation
         
-    def extract_depth(self, image: np.ndarray) -> DepthMap:
-        """Extract depth map using Depth-Anything-V2.
+    def extract_depth(self, image: np.ndarray) -> Tuple[DepthMap, Optional[PerformanceMetrics]]:
+        """Extract depth map using Depth-Anything-V2 with performance optimization.
         
         Args:
             image: RGB beach cam image as numpy array (H, W, 3)
             
         Returns:
-            DepthMap with normalized depth values and quality metrics
+            Tuple of (DepthMap with normalized depth values and quality metrics, PerformanceMetrics if optimization enabled)
         """
         self._load_model()
         
@@ -247,19 +324,33 @@ class DepthAnythingV2Extractor(DepthExtractor):
             # Prepare inputs using the processor
             inputs = self._processor(images=pil_image, return_tensors="pt")
             
-            # Move inputs to device
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            # Apply precision if using fp16
-            if self.precision == "fp16" and self.device == "cuda":
-                inputs = {k: v.half() if v.dtype == torch.float32 else v for k, v in inputs.items()}
-            
-            # Run inference
-            with torch.no_grad():
-                outputs = self._model(**inputs)
-                
-            # Extract depth prediction
-            predicted_depth = outputs.predicted_depth
+            # Use optimized inference if available
+            if self.enable_optimization and self.performance_optimizer and self._optimized_model:
+                try:
+                    # Convert inputs to tensor format expected by optimizer
+                    input_tensor = inputs['pixel_values']
+                    
+                    outputs, performance_metrics = self.performance_optimizer.optimize_inference(
+                        self._optimized_model, input_tensor
+                    )
+                    
+                    # Extract depth prediction from outputs
+                    if hasattr(outputs, 'predicted_depth'):
+                        predicted_depth = outputs.predicted_depth
+                    elif isinstance(outputs, dict) and 'predicted_depth' in outputs:
+                        predicted_depth = outputs['predicted_depth']
+                    else:
+                        # Fallback: assume outputs is the depth tensor
+                        predicted_depth = outputs
+                    
+                except Exception as e:
+                    logger.warning(f"Optimized inference failed: {e}, falling back to standard inference")
+                    performance_metrics = None
+                    predicted_depth = self._standard_inference(inputs)
+            else:
+                # Standard inference
+                performance_metrics = None
+                predicted_depth = self._standard_inference(inputs)
             
             # Postprocess to get normalized depth map
             depth_array = self._postprocess_depth(predicted_depth, original_size)
@@ -275,13 +366,39 @@ class DepthAnythingV2Extractor(DepthExtractor):
                 edge_preservation=edge_preservation
             )
             
+            # Clean up GPU memory after inference
+            if self.device == "cuda":
+                self.hardware_manager.cleanup_gpu_memory()
+            
             logger.info(f"Extracted depth map: size={original_size}, quality={quality_score:.3f}, edge_preservation={edge_preservation:.3f}")
             
-            return depth_map
+            return depth_map, performance_metrics
             
         except Exception as e:
             logger.error(f"Depth extraction failed: {e}")
             raise RuntimeError(f"Depth extraction failed: {e}")
+    
+    def _standard_inference(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Perform standard inference without optimization.
+        
+        Args:
+            inputs: Preprocessed inputs
+            
+        Returns:
+            Predicted depth tensor
+        """
+        # Move inputs to device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        # Apply precision if using fp16
+        if self.precision == "fp16" and self.device == "cuda":
+            inputs = {k: v.half() if v.dtype == torch.float32 else v for k, v in inputs.items()}
+        
+        # Run inference
+        with torch.no_grad():
+            outputs = self._model(**inputs)
+            
+        return outputs.predicted_depth
         
     def validate_quality(self, depth_map: DepthMap) -> QualityMetrics:
         """Validate depth map quality for marine environments.
@@ -420,6 +537,42 @@ class DepthAnythingV2Extractor(DepthExtractor):
         contrast_ratio = min(1.0, contrast_ratio * 4)
         
         return contrast_ratio
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from optimization history.
+        
+        Returns:
+            Dictionary with performance statistics
+        """
+        if not self.enable_optimization or not self.performance_optimizer:
+            return {"optimization_enabled": False}
+        
+        stats = self.performance_optimizer.get_performance_stats()
+        stats["optimization_enabled"] = True
+        stats["target_latency_ms"] = self.performance_optimizer.config.target_latency_ms
+        
+        return stats
+    
+    def clear_performance_history(self):
+        """Clear performance monitoring history."""
+        if self.enable_optimization and self.performance_optimizer:
+            self.performance_optimizer.clear_performance_history()
+    
+    def is_real_time_capable(self) -> bool:
+        """Check if the depth extractor is capable of real-time processing.
+        
+        Returns:
+            True if average processing time is under target latency
+        """
+        if not self.enable_optimization or not self.performance_optimizer:
+            return False
+        
+        stats = self.performance_optimizer.get_performance_stats()
+        
+        if not stats or "avg_total_time_ms" not in stats:
+            return False
+        
+        return stats["avg_total_time_ms"] <= self.performance_optimizer.config.target_latency_ms
     
     def normalize_depth_for_waves(self, depth_map: DepthMap, enhancement_factor: float = 2.0) -> DepthMap:
         """Normalize depth map to enhance wave-ocean contrast.

@@ -6,7 +6,7 @@ from RGB+Depth input using DINOv2 backbone.
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, Any
 from dataclasses import dataclass
 import numpy as np
 import torch
@@ -17,6 +17,8 @@ from .depth_extractor import DepthMap
 from .synthetic_generator import WaveMetrics
 from ..models.backbone import DINOv2Backbone
 from ..models.heads import WaveHeightHead, DirectionHead, BreakingTypeHead
+from ..utils.hardware import HardwareManager
+from ..utils.performance import PerformanceOptimizer, OptimizationConfig, PerformanceMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +58,15 @@ class WaveAnalyzer(ABC):
 class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
     """DINOv2-based multi-task wave analyzer."""
     
-    def __init__(self, backbone_model: str = "dinov2_vitb14", freeze_backbone: bool = True):
+    def __init__(self, backbone_model: str = "dinov2_vitb14", freeze_backbone: bool = True, 
+                 device: Optional[str] = None, enable_optimization: bool = True):
         """Initialize DINOv2 wave analyzer.
         
         Args:
             backbone_model: DINOv2 model variant
             freeze_backbone: Whether to freeze backbone weights
+            device: Device to run model on ("cuda", "cpu", or None for auto-detect)
+            enable_optimization: Whether to enable performance optimizations
         """
         super().__init__()
         self.backbone_model = backbone_model
@@ -69,6 +74,28 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
         self.input_channels = 4  # RGB + Depth
         self.input_resolution = (518, 518)
         self._last_confidence = None
+        self.enable_optimization = enable_optimization
+        
+        # Initialize hardware manager for optimal device selection
+        self.hardware_manager = HardwareManager()
+        
+        # Auto-detect device if not specified using hardware manager
+        if device is None:
+            self.device = self.hardware_manager.get_device()
+        else:
+            self.device = torch.device(device)
+        
+        # Initialize performance optimizer
+        if self.enable_optimization:
+            optimization_config = OptimizationConfig(
+                target_latency_ms=200.0,  # Target <200ms as per requirements
+                enable_mixed_precision=True,
+                enable_torch_compile=True,
+                batch_size=1
+            )
+            self.performance_optimizer = PerformanceOptimizer(optimization_config)
+        else:
+            self.performance_optimizer = None
         
         # Initialize DINOv2 backbone
         self.backbone = DINOv2Backbone(backbone_model, freeze_backbone)
@@ -79,7 +106,65 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
         self.direction_head = DirectionHead(feature_dim)
         self.breaking_head = BreakingTypeHead(feature_dim)
         
-        logger.info(f"Initialized DINOv2WaveAnalyzer with {backbone_model}")
+        # Move model to device with memory optimization
+        self._move_to_device_with_fallback()
+        
+        # Apply performance optimizations
+        if self.enable_optimization:
+            self._apply_optimizations()
+        
+        logger.info(f"Initialized DINOv2WaveAnalyzer with {backbone_model} on {self.device}")
+        logger.info(f"Hardware info: {self.hardware_manager.hardware_info}")
+        logger.info(f"Performance optimization: {'enabled' if enable_optimization else 'disabled'}")
+    
+    def _apply_optimizations(self):
+        """Apply performance optimizations to the model."""
+        if self.performance_optimizer is None:
+            return
+        
+        logger.info("Applying performance optimizations...")
+        
+        # Optimize the entire model
+        optimized_model = self.performance_optimizer.optimize_model(self)
+        
+        # Copy optimized parameters back (if torch.compile was applied)
+        if hasattr(optimized_model, '_orig_mod'):
+            # torch.compile was applied, keep reference to optimized version
+            self._optimized_model = optimized_model
+        else:
+            self._optimized_model = self
+        
+        # Warmup the model for optimal performance
+        input_shape = (self.input_channels, *self.input_resolution)
+        self.performance_optimizer.warmup_model(self._optimized_model, input_shape)
+        
+        logger.info("Performance optimizations applied successfully")
+    
+    def _move_to_device_with_fallback(self):
+        """Move model to device with automatic fallback on memory issues."""
+        try:
+            # Check memory requirements (approximate)
+            model_memory_gb = 3.0  # Estimated memory for DINOv2 + heads
+            
+            if not self.hardware_manager.check_memory_requirements(model_memory_gb):
+                logger.warning("Insufficient memory for GPU, falling back to CPU")
+                self.device = torch.device("cpu")
+            
+            # Move components to device
+            self.to(self.device)
+            
+            # Clean up GPU memory after loading
+            if self.device.type == "cuda":
+                self.hardware_manager.cleanup_gpu_memory()
+                
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.warning(f"GPU out of memory during model loading: {e}")
+                logger.warning("Falling back to CPU")
+                self.device = torch.device("cpu")
+                self.to(self.device)
+            else:
+                raise e
         
     def _prepare_input(self, rgb_image: np.ndarray, depth_map: DepthMap) -> torch.Tensor:
         """Prepare 4-channel input tensor from RGB image and depth map.
@@ -238,33 +323,142 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
         
         return predictions
         
-    def analyze_waves(self, rgb_image: np.ndarray, depth_map: DepthMap) -> WaveMetrics:
-        """Analyze waves using DINOv2 multi-task model.
+    def analyze_waves(self, rgb_image: np.ndarray, depth_map: DepthMap) -> Tuple[WaveMetrics, Optional[PerformanceMetrics]]:
+        """Analyze waves using DINOv2 multi-task model with performance optimization.
         
         Args:
             rgb_image: RGB beach cam image [H, W, 3]
             depth_map: Corresponding depth map
             
         Returns:
-            WaveMetrics with all wave predictions
+            Tuple of (WaveMetrics with all wave predictions, PerformanceMetrics if optimization enabled)
         """
         # Set model to evaluation mode
         self.eval()
         
+        # Prepare 4-channel input
+        input_tensor = self._prepare_input(rgb_image, depth_map)
+        
+        # Use optimized inference if available
+        if self.enable_optimization and self.performance_optimizer:
+            model_to_use = getattr(self, '_optimized_model', self)
+            
+            try:
+                predictions, performance_metrics = self.performance_optimizer.optimize_inference(
+                    model_to_use, input_tensor
+                )
+                
+                # Convert to WaveMetrics
+                wave_metrics = self._convert_to_wave_metrics(predictions)
+                
+                return wave_metrics, performance_metrics
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    logger.warning("GPU out of memory during optimized inference, falling back to standard inference")
+                    self.hardware_manager.cleanup_gpu_memory()
+                    # Fall through to standard inference
+                else:
+                    raise e
+        
+        # Standard inference (fallback or when optimization disabled)
         with torch.no_grad():
-            # Prepare 4-channel input
-            input_tensor = self._prepare_input(rgb_image, depth_map)
+            # Move input to device
+            input_tensor = input_tensor.to(self.device)
             
-            # Get model predictions
-            predictions = self.forward(input_tensor)
+            # Get model predictions with memory management
+            try:
+                predictions = self.forward(input_tensor)
+                
+                # Convert to WaveMetrics
+                wave_metrics = self._convert_to_wave_metrics(predictions)
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    logger.warning("GPU out of memory during inference, cleaning up and retrying")
+                    self.hardware_manager.cleanup_gpu_memory()
+                    
+                    # Retry with smaller batch or fallback to CPU
+                    if self.device.type == "cuda":
+                        logger.warning("Falling back to CPU for this inference")
+                        input_tensor = input_tensor.cpu()
+                        self.cpu()
+                        predictions = self.forward(input_tensor)
+                        wave_metrics = self._convert_to_wave_metrics(predictions)
+                        self.to(self.device)  # Move back to original device
+                    else:
+                        raise e
+                else:
+                    raise e
             
-            # Convert to WaveMetrics
-            wave_metrics = self._convert_to_wave_metrics(predictions)
-            
-        return wave_metrics
+            # Clean up GPU memory after inference
+            if self.device.type == "cuda":
+                self.hardware_manager.cleanup_gpu_memory()
+        
+        return wave_metrics, None
         
     def get_confidence_scores(self) -> ConfidenceScores:
         """Get confidence scores from last prediction."""
         if self._last_confidence is None:
             raise ValueError("No predictions made yet. Call analyze_waves() first.")
         return self._last_confidence
+    
+    def get_optimal_batch_size(self, input_height: int = 518, input_width: int = 518) -> int:
+        """Get optimal batch size for current hardware configuration.
+        
+        Args:
+            input_height: Input image height
+            input_width: Input image width
+            
+        Returns:
+            Optimal batch size for current hardware
+        """
+        # Estimate memory usage
+        model_memory_mb = 3000  # Approximate model memory in MB
+        input_size_mb = (input_height * input_width * 4 * 4) / (1024 * 1024)  # 4 channels, 4 bytes per float
+        
+        return self.hardware_manager.get_optimal_batch_size(model_memory_mb, input_size_mb)
+    
+    def get_hardware_info(self) -> Dict[str, Any]:
+        """Get comprehensive hardware information.
+        
+        Returns:
+            Dictionary with hardware information
+        """
+        return self.hardware_manager.get_system_info()
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from optimization history.
+        
+        Returns:
+            Dictionary with performance statistics
+        """
+        if not self.enable_optimization or not self.performance_optimizer:
+            return {"optimization_enabled": False}
+        
+        stats = self.performance_optimizer.get_performance_stats()
+        stats["optimization_enabled"] = True
+        stats["target_latency_ms"] = self.performance_optimizer.config.target_latency_ms
+        
+        return stats
+    
+    def clear_performance_history(self):
+        """Clear performance monitoring history."""
+        if self.enable_optimization and self.performance_optimizer:
+            self.performance_optimizer.clear_performance_history()
+    
+    def is_real_time_capable(self) -> bool:
+        """Check if the system is capable of real-time processing.
+        
+        Returns:
+            True if average processing time is under target latency
+        """
+        if not self.enable_optimization or not self.performance_optimizer:
+            return False
+        
+        stats = self.performance_optimizer.get_performance_stats()
+        
+        if not stats or "avg_total_time_ms" not in stats:
+            return False
+        
+        return stats["avg_total_time_ms"] <= self.performance_optimizer.config.target_latency_ms

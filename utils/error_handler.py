@@ -82,7 +82,10 @@ class ErrorHandler:
             Result from fallback function if provided
         """
         try:
-            if self.gpu_available:
+            # Check GPU availability dynamically
+            gpu_available = torch.cuda.is_available()
+            
+            if gpu_available:
                 # Clear GPU cache
                 torch.cuda.empty_cache()
                 logger.warning(f"GPU memory error in {operation}. Cleared GPU cache.")
