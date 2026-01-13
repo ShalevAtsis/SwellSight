@@ -5,14 +5,19 @@ This module contains evaluation frameworks, wave-specific metrics, benchmarking 
 and comprehensive reporting for model performance assessment.
 """
 
-from .metrics import WaveAnalysisMetrics
-from .evaluator import ModelEvaluator
-from .benchmarks import PerformanceBenchmark
-from .reports import EvaluationReporter
+# Import the new data evaluation modules (these don't have circular dependencies)
+from .data_quality import DataQualityAssessor, QualityReport
+from .data_comparison import DatasetComparator, DistributionComparison, DataDriftMetrics
+from .data_insights import DataInsightsReporter, DataLineageTracker, DataVersionManager, DataHealthMonitor
 
 __all__ = [
-    "WaveAnalysisMetrics",
-    "ModelEvaluator",
-    "PerformanceBenchmark", 
-    "EvaluationReporter"
+    "DataQualityAssessor",
+    "QualityReport",
+    "DatasetComparator",
+    "DistributionComparison",
+    "DataDriftMetrics",
+    "DataInsightsReporter",
+    "DataLineageTracker",
+    "DataVersionManager",
+    "DataHealthMonitor"
 ]
