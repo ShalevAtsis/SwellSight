@@ -58,15 +58,16 @@ services:
     volumes:
       - swellsight-outputs:/app/outputs
       - swellsight-logs:/app/logs
+      - swellsight-models:/app/models
     environment:
       - PYTHONPATH=/app/src
       - CUDA_VISIBLE_DEVICES=0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "scripts/deploy_api.py", "--base-url", "http://localhost:8000", "health"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
     profiles:
       - api
@@ -141,6 +142,8 @@ volumes:
   swellsight-logs:
     driver: local
   swellsight-checkpoints:
+    driver: local
+  swellsight-models:
     driver: local
   swellsight-redis:
     driver: local

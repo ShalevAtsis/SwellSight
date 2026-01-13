@@ -18,6 +18,11 @@ import threading
 from contextlib import contextmanager
 
 from .hardware import HardwareManager
+from .error_handler import (
+    error_handler, retry_with_backoff, RetryConfig, safe_execute,
+    ProcessingError, MemoryError, HardwareError, ErrorSeverity
+)
+from .logging import performance_logger, PerformanceLoggerMixin
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +42,14 @@ class OptimizationConfig:
     """Configuration for performance optimization."""
     target_latency_ms: float = 200.0
     enable_mixed_precision: bool = True
-    enable_torch_compile: bool = True
+    enable_torch_compile: bool = False  # Disabled by default for compatibility
     enable_tensorrt: bool = False
     batch_size: int = 1
     num_warmup_runs: int = 5
     enable_streaming: bool = False
     max_queue_size: int = 10
 
-class PerformanceOptimizer:
+class PerformanceOptimizer(PerformanceLoggerMixin):
     """Performance optimization manager for real-time inference."""
     
     def __init__(self, config: OptimizationConfig = None):
@@ -73,14 +78,27 @@ class PerformanceOptimizer:
         """
         timing_results = {}
         
-        # GPU synchronization for accurate timing
-        if self.device.type == "cuda":
-            torch.cuda.synchronize()
-        
-        start_time = time.perf_counter()
-        
         try:
+            # GPU synchronization for accurate timing
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
+            
+            start_time = time.perf_counter()
+            
             yield timing_results
+            
+        except Exception as e:
+            # Handle timing measurement errors
+            error_context = error_handler.handle_error(
+                e, "PerformanceOptimizer", f"measure_time_{operation_name}"
+            )
+            timing_results[f"{operation_name}_error"] = str(e)
+            raise ProcessingError(
+                f"Performance measurement failed for {operation_name}: {str(e)}",
+                component="PerformanceOptimizer",
+                operation="measure_time",
+                recovery_suggestions=error_context.recovery_suggestions
+            ) from e
         finally:
             # GPU synchronization for accurate timing
             if self.device.type == "cuda":
@@ -90,8 +108,17 @@ class PerformanceOptimizer:
             elapsed_ms = (end_time - start_time) * 1000
             timing_results[f"{operation_name}_time_ms"] = elapsed_ms
             
+            # Log performance metrics
+            self.log_performance(operation_name, elapsed_ms)
+            
             logger.debug(f"{operation_name} took {elapsed_ms:.2f}ms")
     
+    @retry_with_backoff(
+        retry_config=RetryConfig(max_attempts=2, base_delay=0.5),
+        exceptions=(RuntimeError, torch.cuda.OutOfMemoryError),
+        component="PerformanceOptimizer",
+        operation="model_optimization"
+    )
     def optimize_model(self, model: nn.Module) -> nn.Module:
         """Apply optimization techniques to model.
         
@@ -101,32 +128,56 @@ class PerformanceOptimizer:
         Returns:
             Optimized model
         """
-        logger.info("Applying model optimizations...")
-        
-        # Move to device
-        model = model.to(self.device)
-        model.eval()
-        
-        # Enable mixed precision if supported
-        if self.config.enable_mixed_precision and self.device.type == "cuda":
-            logger.info("Enabling mixed precision (FP16)")
-            model = model.half()
-        
-        # Apply torch.compile if available (PyTorch 2.0+)
-        if self.config.enable_torch_compile and hasattr(torch, 'compile'):
-            try:
-                logger.info("Applying torch.compile optimization")
-                model = torch.compile(model, mode="reduce-overhead")
-            except Exception as e:
-                logger.warning(f"torch.compile failed: {e}")
-                # Continue without torch.compile
-                pass
-        
-        # Set inference mode optimizations
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.deterministic = False
-        
-        return model
+        try:
+            logger.info("Applying model optimizations...")
+            
+            # Move to device
+            model = model.to(self.device)
+            model.eval()
+            
+            # Enable mixed precision if supported
+            if self.config.enable_mixed_precision and self.device.type == "cuda":
+                logger.info("Enabling mixed precision (FP16)")
+                model = model.half()
+            
+            # Apply torch.compile if available (PyTorch 2.0+)
+            if self.config.enable_torch_compile and hasattr(torch, 'compile'):
+                try:
+                    logger.info("Applying torch.compile optimization")
+                    model = torch.compile(model, mode="reduce-overhead")
+                except Exception as e:
+                    logger.warning(f"torch.compile failed: {e}")
+                    # Continue without torch.compile
+                    pass
+            
+            # Set inference mode optimizations
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.deterministic = False
+            
+            return model
+            
+        except torch.cuda.OutOfMemoryError as e:
+            raise MemoryError(
+                "GPU out of memory during model optimization",
+                component="PerformanceOptimizer",
+                operation="model_optimization",
+                recovery_suggestions=[
+                    "Reduce model size or batch size",
+                    "Switch to CPU processing",
+                    "Clear GPU cache and retry"
+                ]
+            ) from e
+        except Exception as e:
+            raise ProcessingError(
+                f"Model optimization failed: {str(e)}",
+                component="PerformanceOptimizer",
+                operation="model_optimization",
+                recovery_suggestions=[
+                    "Try without torch.compile",
+                    "Disable mixed precision",
+                    "Check model compatibility"
+                ]
+            ) from e
     
     def warmup_model(self, model: nn.Module, input_shape: Tuple[int, ...]) -> None:
         """Warm up model with dummy inputs for optimal performance.

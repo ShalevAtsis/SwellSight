@@ -23,6 +23,11 @@ from ..utils.hardware import HardwareManager
 from ..utils.performance import PerformanceOptimizer, OptimizationConfig, PerformanceMetrics
 from ..utils.confidence import ComprehensiveConfidenceScorer, ConfidenceMetrics
 from ..utils.quality_validation import ComprehensiveQualityValidator
+from ..utils.error_handler import (
+    error_handler, retry_with_backoff, RetryConfig, safe_execute,
+    ModelLoadingError, ProcessingError, MemoryError, HardwareError,
+    InputValidationError, ErrorCategory, ErrorSeverity
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +112,7 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
             optimization_config = OptimizationConfig(
                 target_latency_ms=200.0,  # Target <200ms as per requirements
                 enable_mixed_precision=True,
-                enable_torch_compile=True,
+                enable_torch_compile=False,  # Disabled for compatibility
                 batch_size=1
             )
             self.performance_optimizer = PerformanceOptimizer(optimization_config)
@@ -370,159 +375,174 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
         """
         start_time = time.time()
         
-        # Step 1: Validate input quality
-        input_valid, quality_metrics = self.quality_validator.validate_input_quality(
-            rgb_image, depth_map.data
-        )
-        
-        if not input_valid:
-            logger.warning("Input quality validation failed")
-            logger.warning(f"Image valid: {quality_metrics.get('image_valid', False)}")
-            logger.warning(f"Depth valid: {quality_metrics.get('depth_valid', False)}")
-            
-            # Return default metrics for invalid input
-            default_metrics = WaveMetrics(
-                height_meters=0.0,
-                height_feet=0.0,
-                height_confidence=0.0,
-                direction="STRAIGHT",
-                direction_confidence=0.0,
-                breaking_type="NO_BREAKING",
-                breaking_confidence=0.0,
-                extreme_conditions=False
+        try:
+            # Step 1: Validate input quality
+            input_valid, quality_metrics = self.quality_validator.validate_input_quality(
+                rgb_image, depth_map.data
             )
             
-            quality_results = {
-                "input_validation": quality_metrics,
-                "prediction_validation": None,
-                "performance_monitoring": None,
-                "input_rejected": True
-            }
-            
-            return default_metrics, None, quality_results
-        
-        # Set model to evaluation mode
-        self.eval()
-        
-        # Prepare 4-channel input
-        input_tensor = self._prepare_input(rgb_image, depth_map)
-        
-        # Use optimized inference if available
-        if self.enable_optimization and self.performance_optimizer:
-            model_to_use = getattr(self, '_optimized_model', self)
-            
-            try:
-                predictions, performance_metrics = self.performance_optimizer.optimize_inference(
-                    model_to_use, input_tensor
-                )
+            if not input_valid:
+                logger.warning("Input quality validation failed")
+                logger.warning(f"Image valid: {quality_metrics.get('image_valid', False)}")
+                logger.warning(f"Depth valid: {quality_metrics.get('depth_valid', False)}")
                 
-                # Convert to WaveMetrics
-                wave_metrics = self._convert_to_wave_metrics(predictions)
-                
-                # Step 2: Validate prediction quality
-                prediction_dict = self._wave_metrics_to_dict(wave_metrics)
-                prediction_valid, anomaly_metrics = self.quality_validator.validate_prediction_quality(prediction_dict)
-                
-                if not prediction_valid:
-                    logger.warning("Prediction quality validation failed - anomalous prediction detected")
-                    logger.warning(f"Anomaly reasons: {anomaly_metrics.anomaly_reasons}")
-                
-                # Step 3: Monitor performance
-                processing_time_ms = (time.time() - start_time) * 1000
-                memory_usage_mb = self._get_memory_usage()
-                
-                degradation_metrics = self.quality_validator.monitor_performance(
-                    processing_time_ms=processing_time_ms,
-                    memory_usage_mb=memory_usage_mb,
-                    confidence_score=wave_metrics.height_confidence,  # Use height confidence as overall metric
-                    had_error=False
+                # Return default metrics for invalid input
+                default_metrics = WaveMetrics(
+                    height_meters=0.0,
+                    height_feet=0.0,
+                    height_confidence=0.0,
+                    direction="STRAIGHT",
+                    direction_confidence=0.0,
+                    breaking_type="NO_BREAKING",
+                    breaking_confidence=0.0,
+                    extreme_conditions=False
                 )
                 
                 quality_results = {
                     "input_validation": quality_metrics,
-                    "prediction_validation": {
-                        "is_valid": prediction_valid,
-                        "anomaly_metrics": anomaly_metrics
-                    },
-                    "performance_monitoring": degradation_metrics,
-                    "input_rejected": False
+                    "prediction_validation": None,
+                    "performance_monitoring": None,
+                    "input_rejected": True
                 }
                 
-                return wave_metrics, performance_metrics, quality_results
+                return default_metrics, None, quality_results
+            
+            # Set model to evaluation mode
+            self.eval()
+            
+            # Prepare 4-channel input
+            input_tensor = self._prepare_input(rgb_image, depth_map)
+            
+            # Use optimized inference if available
+            if self.enable_optimization and self.performance_optimizer:
+                model_to_use = getattr(self, '_optimized_model', self)
                 
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower():
-                    logger.warning("GPU out of memory during optimized inference, falling back to standard inference")
-                    self.hardware_manager.cleanup_gpu_memory()
-                    # Fall through to standard inference
-                else:
-                    # Record error in performance monitoring
+                try:
+                    predictions, performance_metrics = self.performance_optimizer.optimize_inference(
+                        model_to_use, input_tensor
+                    )
+                    
+                    # Convert to WaveMetrics
+                    wave_metrics = self._convert_to_wave_metrics(predictions)
+                    
+                    # Step 2: Validate prediction quality
+                    prediction_dict = self._wave_metrics_to_dict(wave_metrics)
+                    prediction_valid, anomaly_metrics = self.quality_validator.validate_prediction_quality(prediction_dict)
+                    
+                    if not prediction_valid:
+                        logger.warning("Prediction quality validation failed - anomalous prediction detected")
+                        logger.warning(f"Anomaly reasons: {anomaly_metrics.anomaly_reasons}")
+                    
+                    # Step 3: Monitor performance
                     processing_time_ms = (time.time() - start_time) * 1000
                     memory_usage_mb = self._get_memory_usage()
                     
                     degradation_metrics = self.quality_validator.monitor_performance(
                         processing_time_ms=processing_time_ms,
                         memory_usage_mb=memory_usage_mb,
-                        had_error=True
+                        confidence_score=wave_metrics.height_confidence,  # Use height confidence as overall metric
+                        had_error=False
                     )
                     
                     quality_results = {
                         "input_validation": quality_metrics,
-                        "prediction_validation": None,
+                        "prediction_validation": {
+                            "is_valid": prediction_valid,
+                            "anomaly_metrics": anomaly_metrics
+                        },
                         "performance_monitoring": degradation_metrics,
-                        "input_rejected": False,
-                        "error": str(e)
+                        "input_rejected": False
                     }
                     
-                    raise e
-        
-        # Standard inference (fallback or when optimization disabled)
-        with torch.no_grad():
-            # Move input to device
-            input_tensor = input_tensor.to(self.device)
+                    return wave_metrics, performance_metrics, quality_results
+                    
+                except torch.cuda.OutOfMemoryError as e:
+                    logger.warning("GPU out of memory during optimized inference, falling back to standard inference")
+                    self.hardware_manager.cleanup_gpu_memory()
+                    # Fall through to standard inference
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower():
+                        logger.warning("GPU out of memory during optimized inference, falling back to standard inference")
+                        self.hardware_manager.cleanup_gpu_memory()
+                        # Fall through to standard inference
+                    else:
+                        # Record error in performance monitoring
+                        processing_time_ms = (time.time() - start_time) * 1000
+                        memory_usage_mb = self._get_memory_usage()
+                        
+                        degradation_metrics = self.quality_validator.monitor_performance(
+                            processing_time_ms=processing_time_ms,
+                            memory_usage_mb=memory_usage_mb,
+                            had_error=True
+                        )
+                        
+                        quality_results = {
+                            "input_validation": quality_metrics,
+                            "prediction_validation": None,
+                            "performance_monitoring": degradation_metrics,
+                            "input_rejected": False,
+                            "error": str(e)
+                        }
+                        
+                        raise ProcessingError(
+                            f"Wave analysis failed during optimized inference: {str(e)}",
+                            component="WaveAnalyzer",
+                            operation="wave_analysis",
+                            recovery_suggestions=[
+                                "Try standard inference mode",
+                                "Reduce input image resolution",
+                                "Clear GPU cache and retry"
+                            ]
+                        ) from e
             
-            # Get model predictions with memory management
-            try:
-                predictions = self.forward(input_tensor)
+            # Standard inference (fallback or when optimization disabled)
+            with torch.no_grad():
+                # Move input to device
+                input_tensor = input_tensor.to(self.device)
                 
-                # Convert to WaveMetrics
-                wave_metrics = self._convert_to_wave_metrics(predictions)
-                
-                # Step 2: Validate prediction quality
-                prediction_dict = self._wave_metrics_to_dict(wave_metrics)
-                prediction_valid, anomaly_metrics = self.quality_validator.validate_prediction_quality(prediction_dict)
-                
-                if not prediction_valid:
-                    logger.warning("Prediction quality validation failed - anomalous prediction detected")
-                    logger.warning(f"Anomaly reasons: {anomaly_metrics.anomaly_reasons}")
-                
-                # Step 3: Monitor performance
-                processing_time_ms = (time.time() - start_time) * 1000
-                memory_usage_mb = self._get_memory_usage()
-                
-                degradation_metrics = self.quality_validator.monitor_performance(
-                    processing_time_ms=processing_time_ms,
-                    memory_usage_mb=memory_usage_mb,
-                    confidence_score=wave_metrics.height_confidence,
-                    had_error=False
-                )
-                
-                quality_results = {
-                    "input_validation": quality_metrics,
-                    "prediction_validation": {
-                        "is_valid": prediction_valid,
-                        "anomaly_metrics": anomaly_metrics
-                    },
-                    "performance_monitoring": degradation_metrics,
-                    "input_rejected": False
-                }
-                
-            except RuntimeError as e:
-                if "out of memory" in str(e).lower():
+                # Get model predictions with memory management
+                try:
+                    predictions = self.forward(input_tensor)
+                    
+                    # Convert to WaveMetrics
+                    wave_metrics = self._convert_to_wave_metrics(predictions)
+                    
+                    # Step 2: Validate prediction quality
+                    prediction_dict = self._wave_metrics_to_dict(wave_metrics)
+                    prediction_valid, anomaly_metrics = self.quality_validator.validate_prediction_quality(prediction_dict)
+                    
+                    if not prediction_valid:
+                        logger.warning("Prediction quality validation failed - anomalous prediction detected")
+                        logger.warning(f"Anomaly reasons: {anomaly_metrics.anomaly_reasons}")
+                    
+                    # Step 3: Monitor performance
+                    processing_time_ms = (time.time() - start_time) * 1000
+                    memory_usage_mb = self._get_memory_usage()
+                    
+                    degradation_metrics = self.quality_validator.monitor_performance(
+                        processing_time_ms=processing_time_ms,
+                        memory_usage_mb=memory_usage_mb,
+                        confidence_score=wave_metrics.height_confidence,
+                        had_error=False
+                    )
+                    
+                    quality_results = {
+                        "input_validation": quality_metrics,
+                        "prediction_validation": {
+                            "is_valid": prediction_valid,
+                            "anomaly_metrics": anomaly_metrics
+                        },
+                        "performance_monitoring": degradation_metrics,
+                        "input_rejected": False
+                    }
+                    
+                    return wave_metrics, None, quality_results
+                    
+                except torch.cuda.OutOfMemoryError as e:
                     logger.warning("GPU out of memory during inference, cleaning up and retrying")
                     self.hardware_manager.cleanup_gpu_memory()
                     
-                    # Retry with smaller batch or fallback to CPU
+                    # Retry with CPU fallback
                     if self.device.type == "cuda":
                         logger.warning("Falling back to CPU for this inference")
                         input_tensor = input_tensor.cpu()
@@ -543,7 +563,7 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
                             processing_time_ms=processing_time_ms,
                             memory_usage_mb=memory_usage_mb,
                             confidence_score=wave_metrics.height_confidence,
-                            had_error=True  # GPU fallback counts as error
+                            had_error=True
                         )
                         
                         quality_results = {
@@ -554,55 +574,58 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
                             },
                             "performance_monitoring": degradation_metrics,
                             "input_rejected": False,
-                            "gpu_fallback": True
+                            "fallback_used": "cpu"
                         }
+                        
+                        return wave_metrics, None, quality_results
                     else:
-                        # Record error in performance monitoring
-                        processing_time_ms = (time.time() - start_time) * 1000
-                        memory_usage_mb = self._get_memory_usage()
+                        raise MemoryError(
+                            "Out of memory during wave analysis",
+                            component="WaveAnalyzer",
+                            operation="wave_analysis",
+                            recovery_suggestions=[
+                                "Reduce input image resolution",
+                                "Restart the application to clear memory",
+                                "Use a smaller model variant"
+                            ]
+                        ) from e
                         
-                        degradation_metrics = self.quality_validator.monitor_performance(
-                            processing_time_ms=processing_time_ms,
-                            memory_usage_mb=memory_usage_mb,
-                            had_error=True
-                        )
-                        
-                        quality_results = {
-                            "input_validation": quality_metrics,
-                            "prediction_validation": None,
-                            "performance_monitoring": degradation_metrics,
-                            "input_rejected": False,
-                            "error": str(e)
-                        }
-                        
-                        raise e
-                else:
-                    # Record error in performance monitoring
-                    processing_time_ms = (time.time() - start_time) * 1000
-                    memory_usage_mb = self._get_memory_usage()
+                except RuntimeError as e:
+                    raise ProcessingError(
+                        f"Wave analysis failed during inference: {str(e)}",
+                        component="WaveAnalyzer",
+                        operation="wave_analysis",
+                        recovery_suggestions=[
+                            "Check input tensor format and dimensions",
+                            "Verify model is properly loaded",
+                            "Try reloading the model"
+                        ]
+                    ) from e
                     
-                    degradation_metrics = self.quality_validator.monitor_performance(
-                        processing_time_ms=processing_time_ms,
-                        memory_usage_mb=memory_usage_mb,
-                        had_error=True
-                    )
-                    
-                    quality_results = {
-                        "input_validation": quality_metrics,
-                        "prediction_validation": None,
-                        "performance_monitoring": degradation_metrics,
-                        "input_rejected": False,
-                        "error": str(e)
-                    }
-                    
-                    raise e
+        except ValueError as e:
+            raise InputValidationError(
+                f"Invalid input for wave analysis: {str(e)}",
+                component="WaveAnalyzer",
+                operation="wave_analysis",
+                recovery_suggestions=[
+                    "Check RGB image format and dimensions",
+                    "Verify depth map data format",
+                    "Ensure inputs are properly preprocessed"
+                ]
+            ) from e
+        except Exception as e:
+            # Handle error through error handler
+            error_context = error_handler.handle_error(
+                e, "WaveAnalyzer", "wave_analysis"
+            )
             
-            # Clean up GPU memory after inference
-            if self.device.type == "cuda":
-                self.hardware_manager.cleanup_gpu_memory()
-        
-        return wave_metrics, None, quality_results
-        
+            raise ProcessingError(
+                f"Wave analysis failed: {str(e)}",
+                component="WaveAnalyzer",
+                operation="wave_analysis",
+                recovery_suggestions=error_context.recovery_suggestions
+            ) from e
+    
     def get_confidence_scores(self) -> ConfidenceScores:
         """Get confidence scores from last prediction."""
         if self._last_confidence is None:

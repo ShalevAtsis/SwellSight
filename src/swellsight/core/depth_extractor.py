@@ -18,6 +18,11 @@ import logging
 
 from ..utils.hardware import HardwareManager
 from ..utils.performance import PerformanceOptimizer, OptimizationConfig, PerformanceMetrics
+from ..utils.error_handler import (
+    error_handler, retry_with_backoff, RetryConfig, safe_execute,
+    ModelLoadingError, ProcessingError, MemoryError, HardwareError,
+    ErrorCategory, ErrorSeverity
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +101,7 @@ class DepthAnythingV2Extractor(DepthExtractor):
             optimization_config = OptimizationConfig(
                 target_latency_ms=100.0,  # Depth extraction should be faster
                 enable_mixed_precision=(precision == "fp16"),
-                enable_torch_compile=True,
+                enable_torch_compile=False,  # Disabled for compatibility
                 batch_size=1
             )
             self.performance_optimizer = PerformanceOptimizer(optimization_config)
@@ -122,6 +127,12 @@ class DepthAnythingV2Extractor(DepthExtractor):
         logger.info(f"Hardware info: {self.hardware_manager.hardware_info}")
         logger.info(f"Performance optimization: {'enabled' if enable_optimization else 'disabled'}")
         
+    @retry_with_backoff(
+        retry_config=RetryConfig(max_attempts=3, base_delay=1.0),
+        exceptions=(RuntimeError, torch.cuda.OutOfMemoryError, ConnectionError),
+        component="DepthExtractor",
+        operation="model_loading"
+    )
     def _load_model(self):
         """Lazy load the model and processor with hardware optimization."""
         if self._model is None:
@@ -180,8 +191,31 @@ class DepthAnythingV2Extractor(DepthExtractor):
                 if self.enable_optimization:
                     logger.info("Performance optimizations applied to depth model")
                 
+            except torch.cuda.OutOfMemoryError as e:
+                raise MemoryError(
+                    f"GPU out of memory loading {self.model_name}",
+                    component="DepthExtractor",
+                    operation="model_loading",
+                    recovery_suggestions=[
+                        "Reduce model size (try 'base' or 'small')",
+                        "Switch to CPU processing",
+                        "Clear GPU cache and restart",
+                        "Close other GPU-intensive applications"
+                    ]
+                ) from e
+            except (ConnectionError, OSError) as e:
+                raise ModelLoadingError(
+                    f"Failed to download model {self.model_name}: {str(e)}",
+                    component="DepthExtractor", 
+                    operation="model_loading",
+                    recovery_suggestions=[
+                        "Check internet connection",
+                        "Verify Hugging Face Hub access",
+                        "Clear model cache and retry",
+                        "Use offline model if available"
+                    ]
+                ) from e
             except Exception as e:
-                logger.error(f"Failed to load model {self.model_name}: {e}")
                 # Try fallback to CPU if GPU loading failed
                 if self.device == "cuda":
                     logger.warning("GPU loading failed, attempting CPU fallback")
@@ -192,10 +226,18 @@ class DepthAnythingV2Extractor(DepthExtractor):
                         self._model.eval()
                         logger.info(f"Successfully loaded {self.model_name} on CPU fallback")
                     except Exception as cpu_e:
-                        logger.error(f"CPU fallback also failed: {cpu_e}")
-                        raise RuntimeError(f"Model loading failed on both GPU and CPU: {e}, {cpu_e}")
+                        raise ModelLoadingError(
+                            f"Model loading failed on both GPU and CPU: {str(e)}, {str(cpu_e)}",
+                            component="DepthExtractor",
+                            operation="model_loading",
+                            severity=ErrorSeverity.CRITICAL
+                        ) from cpu_e
                 else:
-                    raise RuntimeError(f"Model loading failed: {e}")
+                    raise ModelLoadingError(
+                        f"Model loading failed: {str(e)}",
+                        component="DepthExtractor",
+                        operation="model_loading"
+                    ) from e
     
     def _preprocess_image(self, image: np.ndarray) -> Tuple[Image.Image, Tuple[int, int]]:
         """Preprocess image for depth extraction.
@@ -315,9 +357,9 @@ class DepthAnythingV2Extractor(DepthExtractor):
         Returns:
             Tuple of (DepthMap with normalized depth values and quality metrics, PerformanceMetrics if optimization enabled)
         """
-        self._load_model()
-        
         try:
+            self._load_model()
+            
             # Preprocess image
             pil_image, original_size = self._preprocess_image(image)
             
@@ -374,9 +416,42 @@ class DepthAnythingV2Extractor(DepthExtractor):
             
             return depth_map, performance_metrics
             
+        except torch.cuda.OutOfMemoryError as e:
+            raise MemoryError(
+                f"GPU out of memory during depth extraction",
+                component="DepthExtractor",
+                operation="depth_extraction",
+                recovery_suggestions=[
+                    "Reduce input image resolution",
+                    "Switch to CPU processing",
+                    "Clear GPU cache and retry",
+                    "Use smaller model variant"
+                ]
+            ) from e
+        except ValueError as e:
+            raise ProcessingError(
+                f"Invalid input for depth extraction: {str(e)}",
+                component="DepthExtractor",
+                operation="depth_extraction",
+                severity=ErrorSeverity.LOW,
+                recovery_suggestions=[
+                    "Check image format and dimensions",
+                    "Ensure image is RGB with shape (H, W, 3)",
+                    "Verify image data type and range"
+                ]
+            ) from e
         except Exception as e:
-            logger.error(f"Depth extraction failed: {e}")
-            raise RuntimeError(f"Depth extraction failed: {e}")
+            # Handle error through error handler
+            error_context = error_handler.handle_error(
+                e, "DepthExtractor", "depth_extraction"
+            )
+            
+            raise ProcessingError(
+                f"Depth extraction failed: {str(e)}",
+                component="DepthExtractor",
+                operation="depth_extraction",
+                recovery_suggestions=error_context.recovery_suggestions
+            ) from e
     
     def _standard_inference(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Perform standard inference without optimization.

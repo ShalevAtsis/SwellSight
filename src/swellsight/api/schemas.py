@@ -5,14 +5,14 @@ Defines Pydantic models for API request/response validation and documentation.
 """
 
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 class WaveAnalysisRequest(BaseModel):
     """Request schema for wave analysis."""
     
     image_url: Optional[str] = Field(None, description="URL of beach cam image to analyze")
-    processing_options: Optional[Dict[str, any]] = Field(
+    processing_options: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Optional processing parameters"
     )
@@ -42,7 +42,7 @@ class BatchAnalysisRequest(BaseModel):
     """Request schema for batch wave analysis."""
     
     image_urls: List[str] = Field(..., description="List of beach cam image URLs")
-    processing_options: Optional[Dict[str, any]] = Field(
+    processing_options: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Optional processing parameters"
     )
@@ -88,5 +88,5 @@ class ErrorResponse(BaseModel):
     
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, any]] = Field(None, description="Additional error details")
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     timestamp: datetime = Field(default_factory=datetime.now, description="Error timestamp")

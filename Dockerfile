@@ -71,9 +71,13 @@ WORKDIR /app
 COPY requirements/ requirements/
 RUN pip install -r requirements/inference.txt
 
+# Install additional production dependencies
+RUN pip install uvicorn[standard] gunicorn psutil
+
 # Copy only necessary files for inference
 COPY src/ src/
-COPY configs/inference.yaml configs/
+COPY configs/ configs/
+COPY scripts/ scripts/
 COPY pyproject.toml .
 
 # Install package
@@ -81,15 +85,25 @@ RUN pip install -e .
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash swellsight
+RUN chown -R swellsight:swellsight /app
 USER swellsight
 
 # Create directories
-RUN mkdir -p outputs logs
+RUN mkdir -p outputs logs models
 
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+# Health check using the deployment script
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+    CMD python scripts/deploy_api.py --base-url http://localhost:8000 health || exit 1
 
-CMD ["uvicorn", "swellsight.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use gunicorn for production deployment
+CMD ["gunicorn", "src.swellsight.api.server:app", \
+     "--bind", "0.0.0.0:8000", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--workers", "1", \
+     "--timeout", "120", \
+     "--keep-alive", "2", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
+     "--preload"]

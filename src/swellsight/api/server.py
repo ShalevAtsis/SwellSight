@@ -8,41 +8,82 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import logging
+import time
+import signal
+import sys
 from contextlib import asynccontextmanager
+from typing import Dict, Any
 
 from .endpoints import router
+from .deployment import ModelServer
 from ..core.pipeline import WaveAnalysisPipeline
 from ..utils.logging import setup_logging
 
-# Global pipeline instance
-pipeline = None
+# Global model server instance
+model_server = None
+server_start_time = time.time()
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    global shutdown_requested
+    logger = logging.getLogger("swellsight.api")
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    shutdown_requested = True
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
-    global pipeline
+    """Application lifespan manager with graceful startup and shutdown."""
+    global model_server, server_start_time
     
     # Startup
     logger = logging.getLogger("swellsight.api")
     logger.info("Starting SwellSight API server...")
     
     try:
-        # Initialize wave analysis pipeline
-        pipeline = WaveAnalysisPipeline()
-        logger.info("Wave analysis pipeline initialized")
+        # Initialize model server
+        logger.info("Initializing model server...")
+        model_server = ModelServer()
+        success = model_server.initialize_models()
         
-        # Store pipeline in app state
-        app.state.pipeline = pipeline
+        if not success:
+            logger.warning("Model server initialized with warnings")
+        else:
+            logger.info("Model server initialized successfully")
+        
+        # Store model server in app state
+        app.state.model_server = model_server
+        app.state.pipeline = model_server.pipeline
+        app.state.start_time = server_start_time
+        
+        logger.info("SwellSight API server startup complete")
         
     except Exception as e:
-        logger.error(f"Failed to initialize pipeline: {e}")
+        logger.error(f"Failed to initialize model server: {e}")
         raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down SwellSight API server...")
-    # Cleanup resources if needed
+    
+    try:
+        # Cleanup model server resources
+        if model_server:
+            logger.info("Cleaning up model server resources...")
+            model_server.cleanup()
+            
+        logger.info("SwellSight API server shutdown complete")
+        
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+    
+    # Clear global state
+    model_server = None
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
@@ -78,12 +119,71 @@ def create_app() -> FastAPI:
     # Health check endpoint
     @app.get("/health")
     async def health_check():
-        """Health check endpoint."""
+        """Basic health check endpoint."""
         return {
             "status": "healthy",
             "service": "SwellSight Wave Analysis API",
-            "version": "0.1.0"
+            "version": "0.1.0",
+            "timestamp": time.time()
         }
+    
+    # Detailed health check endpoint
+    @app.get("/health/detailed")
+    async def detailed_health_check():
+        """Detailed health check with component status."""
+        try:
+            # Use model server health status if available
+            if hasattr(app.state, 'model_server') and app.state.model_server:
+                return app.state.model_server.get_health_status()
+            else:
+                return {
+                    "status": "degraded",
+                    "service": "SwellSight Wave Analysis API",
+                    "version": "0.1.0",
+                    "timestamp": time.time(),
+                    "uptime_seconds": time.time() - server_start_time,
+                    "error": "Model server not available"
+                }
+                
+        except Exception as e:
+            return {
+                "status": "error",
+                "service": "SwellSight Wave Analysis API",
+                "version": "0.1.0",
+                "timestamp": time.time(),
+                "error": str(e)
+            }
+    
+    # Readiness probe endpoint
+    @app.get("/ready")
+    async def readiness_check():
+        """Readiness probe for container orchestration."""
+        try:
+            if shutdown_requested:
+                raise HTTPException(status_code=503, detail="Shutdown in progress")
+            
+            # Check if pipeline is ready
+            if hasattr(app.state, 'pipeline') and app.state.pipeline:
+                status = app.state.pipeline.get_pipeline_status()
+                if status.get("components_initialized", False):
+                    return {"status": "ready", "timestamp": time.time()}
+                else:
+                    raise HTTPException(status_code=503, detail="Pipeline not ready")
+            else:
+                raise HTTPException(status_code=503, detail="Pipeline not available")
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Readiness check failed: {str(e)}")
+    
+    # Liveness probe endpoint
+    @app.get("/live")
+    async def liveness_check():
+        """Liveness probe for container orchestration."""
+        if shutdown_requested:
+            raise HTTPException(status_code=503, detail="Shutdown in progress")
+        return {"status": "alive", "timestamp": time.time()}
     
     return app
 
