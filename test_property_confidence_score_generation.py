@@ -127,7 +127,7 @@ def test_property_24_confidence_score_generation(test_data):
         )
         
         # Analyze waves to get predictions with confidence scores
-        wave_metrics, _ = analyzer.analyze_waves(
+        wave_metrics, _, _ = analyzer.analyze_waves(
             test_data["rgb_image"], 
             test_data["depth_map"]
         )
