@@ -6,29 +6,35 @@
     "description": "Enhanced SwellSight pipeline with Depth-Anything-V2 and FLUX.1-dev support"
   },
   "processing": {
-    "batch_size": "auto",
+    "batch_size": 1,
     "max_images": 1000,
     "quality_threshold": 0.7,
-    "memory_limit_gb": "auto",
+    "memory_limit_gb": 12.513058471679688,
     "image_resolution": {
       "default": 512,
       "max": 1024,
       "min": 256
     },
-    "parallel_workers": "auto"
+    "parallel_workers": 8
   },
   "models": {
     "depth_model": {
       "name": "depth-anything/Depth-Anything-V2-Large",
       "type": "depth_estimation",
-      "input_size": [518, 518],
+      "input_size": [
+        518,
+        518
+      ],
       "output_channels": 1,
       "precision": "fp16"
     },
     "base_model": {
       "name": "black-forest-labs/FLUX.1-dev",
       "type": "text_to_image",
-      "input_size": [1024, 1024],
+      "input_size": [
+        1024,
+        1024
+      ],
       "guidance_scale": 3.5,
       "num_inference_steps": 28,
       "precision": "fp16"
@@ -41,11 +47,11 @@
       "control_guidance_end": 1.0,
       "precision": "fp16"
     },
-    "mixed_precision": true,
+    "mixed_precision": false,
     "enable_xformers": true,
     "enable_flash_attention": false,
     "gradient_checkpointing": false,
-    "cpu_offload": false
+    "cpu_offload": true
   },
   "paths": {
     "data_dir": "./data",
@@ -57,13 +63,13 @@
   "hardware": {
     "auto_detect": true,
     "gpu_memory_fraction": 0.9,
-    "cpu_threads": "auto",
+    "cpu_threads": 16,
     "memory_growth": true
   },
   "optimizations": {
-    "use_xformers": "auto",
-    "use_flash_attention": "auto",
-    "gradient_checkpointing": "auto",
+    "use_xformers": false,
+    "use_flash_attention": false,
+    "gradient_checkpointing": true,
     "cpu_offload": "auto",
     "compile_models": false,
     "cache_models": true
@@ -78,5 +84,17 @@
     "level": "INFO",
     "save_logs": true,
     "log_file": "pipeline.log"
+  },
+  "detected_hardware": {
+    "platform": "Windows",
+    "cpu_count": 16,
+    "memory_gb": 15.64132308959961,
+    "gpu_available": false,
+    "gpu_count": 0,
+    "gpu_memory_gb": 0,
+    "gpu_name": null,
+    "cuda_version": null,
+    "mixed_precision_supported": false,
+    "flux_compatibility": "none"
   }
 }

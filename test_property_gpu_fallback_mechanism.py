@@ -15,7 +15,6 @@ sys.path.append('.')
 
 from utils.error_handler import ErrorHandler, handle_gpu_memory_error
 
-
 class TestGPUFallbackMechanism:
     """Property-based tests for GPU fallback mechanism"""
     
@@ -37,9 +36,6 @@ class TestGPUFallbackMechanism:
         """
         operation_name = "test_operation"
         fallback_func = Mock(return_value="cpu_result")
-        
-        # Set GPU available on the error handler instance
-        self.error_handler.gpu_available = True
         
         with patch('torch.cuda.is_available', return_value=True), \
              patch('torch.cuda.empty_cache') as mock_empty_cache, \
@@ -89,9 +85,6 @@ class TestGPUFallbackMechanism:
         # Reset log messages
         self.log_messages.clear()
         
-        # Set GPU availability on the error handler instance
-        self.error_handler.gpu_available = gpu_available
-        
         # Mock GPU availability
         with patch('torch.cuda.is_available', return_value=gpu_available), \
              patch('torch.cuda.empty_cache') as mock_empty_cache, \
@@ -132,7 +125,63 @@ class TestGPUFallbackMechanism:
                 # Should log no fallback available
                 no_fallback_logged = any("No fallback available" in msg and operation_name in msg for msg in log_messages)
                 assert no_fallback_logged, f"Should log no fallback available for {operation_name}"
+    
+    def test_no_gpu_available_property(self):
+        """
+        Property: When GPU is not available, fallback should still work 
+        but skip GPU-specific operations
+        
+        Feature: swellsight-pipeline-improvements, Property 18: GPU Fallback Mechanism
+        Validates: Requirements 4.3
+        """
+        operation_name = "cpu_only_operation"
+        fallback_func = Mock(return_value="cpu_result")
+        
+        with patch('torch.cuda.is_available', return_value=False), \
+             patch('torch.cuda.empty_cache') as mock_empty_cache, \
+             patch('utils.error_handler.logger', self.mock_logger):
+            
+            result = self.error_handler.handle_gpu_memory_error(operation_name, fallback_func)
+            
+            # Should return fallback result
+            assert result == "cpu_result", "Should return fallback result even without GPU"
+            
+            # Should call fallback function
+            fallback_func.assert_called_once()
+            
+            # Should NOT call GPU cache clearing when GPU not available
+            mock_empty_cache.assert_not_called()
+            
+            # Should still log fallback message
+            fallback_logged = any("Falling back to CPU processing" in msg for level, msg in self.log_messages)
+            assert fallback_logged, "Should log CPU fallback message even without GPU"
+    
+    def test_convenience_function_property(self):
+        """
+        Property: The convenience function should behave identically to 
+        the class method
+        
+        Feature: swellsight-pipeline-improvements, Property 18: GPU Fallback Mechanism
+        Validates: Requirements 4.3
+        """
+        operation_name = "convenience_test"
+        fallback_func = Mock(return_value="convenience_result")
+        
+        with patch('torch.cuda.is_available', return_value=True), \
+             patch('torch.cuda.empty_cache'), \
+             patch('torch.cuda.memory_allocated', return_value=1024*1024*1024), \
+             patch('torch.cuda.memory_reserved', return_value=2*1024*1024*1024):
+            
+            # Test convenience function
+            result = handle_gpu_memory_error(operation_name, fallback_func)
+            
+            # Should return fallback result
+            assert result == "convenience_result", "Convenience function should return fallback result"
+            
+            # Should call fallback function
+            fallback_func.assert_called_once()
 
 
 if __name__ == "__main__":
+    # Run the property tests
     pytest.main([__file__, "-v", "--tb=short"])
