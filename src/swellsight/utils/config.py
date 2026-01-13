@@ -26,15 +26,44 @@ class ModelConfig:
 @dataclass
 class TrainingConfig:
     """Configuration for training parameters."""
+    # Basic training parameters
     batch_size: int = 32
     learning_rate: float = 1e-4
     num_epochs: int = 100
     weight_decay: float = 1e-5
     gradient_clip_norm: float = 1.0
     use_mixed_precision: bool = True
+    
+    # Checkpoint and validation
     save_checkpoint_every: int = 10
     validate_every: int = 5
     early_stopping_patience: int = 20
+    
+    # Multi-task loss balancing
+    height_loss_weight: float = 1.0
+    direction_loss_weight: float = 1.0
+    breaking_loss_weight: float = 1.0
+    adaptive_loss_weighting: bool = True
+    
+    # Learning rate scheduling
+    scheduler_type: str = "cosine"  # "cosine", "step", "plateau", "warmup_cosine"
+    scheduler_step_on_batch: bool = False
+    warmup_epochs: int = 5
+    cosine_min_lr: float = 1e-6
+    step_size: int = 30
+    step_gamma: float = 0.1
+    plateau_patience: int = 10
+    plateau_factor: float = 0.5
+    
+    # Logging and monitoring
+    log_interval: int = 100
+    
+    # Sim-to-real training strategy
+    pretrain_epochs: int = 50
+    finetune_epochs: int = 50
+    synthetic_data_ratio: float = 0.8
+    real_data_ratio: float = 0.2
+    domain_adaptation_weight: float = 0.1
 
 @dataclass
 class DataConfig:
