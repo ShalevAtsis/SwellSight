@@ -354,8 +354,8 @@ swellsight-wave-analysis/
     - **Property 27: Synthetic-Real Distribution Matching**
     - **Validates: Requirements 6.4, 6.5**
 
-- [ ] 11. Implement comprehensive model evaluation and metrics
-  - [ ] 11.1 Create wave analysis evaluation framework
+- [-] 11. Implement comprehensive model evaluation and metrics
+  - [x] 11.1 Create wave analysis evaluation framework
     - Implement accuracy metrics for wave height (MAE, RMSE, accuracy within ±0.2m)
     - Create direction classification metrics (precision, recall, F1-score per class)
     - Add breaking type classification evaluation (confusion matrix, per-class metrics)

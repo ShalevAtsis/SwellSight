@@ -51,11 +51,22 @@ class PerformanceBenchmarker:
     
     def _detect_hardware_config(self) -> HardwareConfig:
         """Detect current hardware configuration."""
-        # TODO: Implement hardware detection in task 11.2
+        device_type = self.device.type
+        
+        if device_type == "cuda":
+            device_name = torch.cuda.get_device_name(self.device)
+            memory_total_gb = torch.cuda.get_device_properties(self.device).total_memory / (1024**3)
+            compute_capability = f"{torch.cuda.get_device_properties(self.device).major}.{torch.cuda.get_device_properties(self.device).minor}"
+        else:
+            device_name = "CPU"
+            memory_total_gb = psutil.virtual_memory().total / (1024**3)
+            compute_capability = None
+        
         return HardwareConfig(
-            device_type=self.device.type,
-            device_name="Unknown",
-            memory_total_gb=0.0
+            device_type=device_type,
+            device_name=device_name,
+            memory_total_gb=memory_total_gb,
+            compute_capability=compute_capability
         )
     
     @contextmanager
@@ -87,8 +98,24 @@ class PerformanceBenchmarker:
         Returns:
             Average inference time in milliseconds
         """
-        # TODO: Implement inference speed benchmarking in task 11.2
-        raise NotImplementedError("Inference speed benchmarking will be implemented in task 11.2")
+        input_tensor = input_tensor.to(self.device)
+        
+        # Warmup iterations
+        with torch.no_grad():
+            for _ in range(num_warmup):
+                _ = self.model(input_tensor)
+                if self.device.type == "cuda":
+                    torch.cuda.synchronize()
+        
+        # Benchmark iterations
+        execution_times = []
+        with torch.no_grad():
+            for _ in range(num_iterations):
+                with self._measure_time():
+                    _ = self.model(input_tensor)
+                execution_times.append(self.last_execution_time)
+        
+        return np.mean(execution_times)
     
     def measure_memory_usage(self, input_tensor: torch.Tensor) -> Dict[str, float]:
         """Measure memory usage during inference.
@@ -99,8 +126,37 @@ class PerformanceBenchmarker:
         Returns:
             Dictionary with memory usage statistics
         """
-        # TODO: Implement memory usage measurement in task 11.2
-        raise NotImplementedError("Memory usage measurement will be implemented in task 11.2")
+        input_tensor = input_tensor.to(self.device)
+        
+        # Clear cache and measure baseline
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            baseline_memory = torch.cuda.memory_allocated() / (1024**2)  # MB
+        else:
+            baseline_memory = 0.0
+        
+        # Measure memory during inference
+        with torch.no_grad():
+            _ = self.model(input_tensor)
+            
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
+                peak_memory = torch.cuda.max_memory_allocated() / (1024**2)  # MB
+                current_memory = torch.cuda.memory_allocated() / (1024**2)  # MB
+                gpu_utilization = (current_memory / self.hardware_config.memory_total_gb / 1024) * 100
+            else:
+                peak_memory = 0.0
+                current_memory = 0.0
+                gpu_utilization = 0.0
+        
+        return {
+            "baseline_memory_mb": baseline_memory,
+            "peak_memory_mb": peak_memory,
+            "current_memory_mb": current_memory,
+            "memory_increase_mb": peak_memory - baseline_memory,
+            "gpu_utilization": gpu_utilization
+        }
     
     def benchmark_throughput(self, 
                            batch_sizes: List[int],
@@ -114,8 +170,32 @@ class PerformanceBenchmarker:
         Returns:
             Dictionary mapping batch size to throughput (images/second)
         """
-        # TODO: Implement throughput benchmarking in task 11.2
-        raise NotImplementedError("Throughput benchmarking will be implemented in task 11.2")
+        throughput_results = {}
+        
+        for batch_size in batch_sizes:
+            try:
+                # Create batch input tensor
+                batch_input = torch.randn(batch_size, *input_shape).to(self.device)
+                
+                # Benchmark this batch size
+                avg_time_ms = self.benchmark_inference_speed(
+                    batch_input, num_warmup=5, num_iterations=20
+                )
+                
+                # Calculate throughput (images per second)
+                throughput = (batch_size * 1000.0) / avg_time_ms
+                throughput_results[batch_size] = throughput
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    # Skip this batch size if OOM
+                    throughput_results[batch_size] = 0.0
+                    if self.device.type == "cuda":
+                        torch.cuda.empty_cache()
+                else:
+                    raise e
+        
+        return throughput_results
     
     def run_complete_benchmark(self, 
                              input_tensor: torch.Tensor) -> PerformanceBenchmark:
