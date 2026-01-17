@@ -1,7 +1,6 @@
 """
 PyTorch dataset classes for wave analysis training and evaluation.
-
-Handles both real beach cam footage and synthetic training data.
+Handles loading synthetic .npy files and creating training examples.
 """
 
 from typing import List, Optional, Tuple, Dict, Any
@@ -10,19 +9,40 @@ from torch.utils.data import Dataset
 import numpy as np
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+import random
 
-# from .preprocessing import BeachCamImage
-from ..core.depth_extractor import DepthMap
-from ..core.synthetic_generator import WaveMetrics, SyntheticImage
+# --- 1. DEFINITIONS FOR MISSING CLASSES ---
+@dataclass
+class BeachCamImage:
+    """Container for RGB image data."""
+    rgb_data: np.ndarray
+    resolution: Tuple[int, int]
+    format: str = "RGB"
+    quality_score: float = 1.0
 
+@dataclass
+class DepthMap:
+    """Container for Depth data."""
+    data: np.ndarray
+
+@dataclass
+class WaveMetrics:
+    """Container for Wave Labels."""
+    height_meters: float
+    direction: str
+    breaking_type: str
+    height_confidence: float = 1.0
+    direction_confidence: float = 1.0
+    breaking_confidence: float = 1.0
+
+# --- 2. ENUMS & DATA CLASSES ---
 class DataSplit(Enum):
-    """Dataset split types."""
     TRAIN = "train"
     VALIDATION = "validation"
     TEST = "test"
 
 class DataSource(Enum):
-    """Data source types."""
     REAL = "real"
     SYNTHETIC = "synthetic"
 
@@ -36,175 +56,150 @@ class TrainingExample:
     data_source: DataSource
     augmentation_applied: List[str]
 
-@dataclass
-class DatasetStatistics:
-    """Statistical information about dataset."""
-    total_samples: int
-    real_samples: int
-    synthetic_samples: int
-    height_distribution: Dict[str, float]
-    direction_distribution: Dict[str, int]
-    breaking_type_distribution: Dict[str, int]
-
-@dataclass
-class DatasetBalance:
-    """Dataset balance metrics across wave conditions."""
-    height_balance_score: float
-    direction_balance_score: float
-    breaking_balance_score: float
-    overall_balance_score: float
-
+# --- 3. DATASET IMPLEMENTATION ---
 class WaveDataset(Dataset):
-    """PyTorch dataset for wave analysis training."""
+    """PyTorch dataset that loads SwellSight data from disk."""
     
-    def __init__(self,
-                 examples: List[TrainingExample],
-                 split: DataSplit,
+    def __init__(self, 
+                 data_dir: str, 
+                 split: str = 'train', 
+                 train_ratio: float = 0.8,
                  transform: Optional[Any] = None,
-                 target_resolution: Tuple[int, int] = (518, 518)):
-        """Initialize wave dataset.
+                 target_resolution: Tuple[int, int] = (224, 224)): # DINOv2 compatible (224 = 16*14)
         
-        Args:
-            examples: List of training examples
-            split: Dataset split type
-            transform: Optional data transforms
-            target_resolution: Target image resolution
-        """
-        self.examples = examples
+        self.data_dir = Path(data_dir)
         self.split = split
         self.transform = transform
-        self.target_resolution = target_resolution
+        # Ensure resolution is multiple of 14 for DINOv2
+        self.target_resolution = (
+            (target_resolution[0] // 14) * 14,
+            (target_resolution[1] // 14) * 14
+        )
         
-        # Calculate dataset statistics
-        self.statistics = self._calculate_statistics()
-        self.balance_metrics = self._calculate_balance_metrics()
-    
+        # Load and split files
+        self.examples = self._load_and_split_data(train_ratio)
+        
+        print(f"[{split.upper()}] Loaded {len(self.examples)} examples from {self.data_dir}")
+        print(f"[{split.upper()}] Target resolution: {self.target_resolution}")
+
+    def _load_and_split_data(self, train_ratio: float) -> List[TrainingExample]:
+        """Scans directory for .npy files and creates TrainingExamples."""
+        if not self.data_dir.exists():
+            print(f"Warning: Directory {self.data_dir} does not exist.")
+            return []
+
+        # Find all image files (excluding labels and depth files)
+        # We look for files ending in .npy but not ending in _labels.npy or _depth.npy
+        all_files = sorted([
+            f for f in self.data_dir.glob('*.npy') 
+            if '_labels' not in f.name and '_depth' not in f.name
+        ])
+
+        # Random Shuffle with fixed seed for consistent train/val splits
+        random.Random(42).shuffle(all_files)
+        
+        # Split indices
+        split_idx = int(len(all_files) * train_ratio)
+        
+        if self.split == 'train':
+            selected_files = all_files[:split_idx]
+        else: # validation
+            selected_files = all_files[split_idx:]
+
+        examples = []
+        for img_file in selected_files:
+            try:
+                # 1. Load Image
+                rgb_data = np.load(img_file)
+                
+                # 2. Load Label
+                label_file = img_file.parent / f"{img_file.stem}_labels.npy"
+                if not label_file.exists():
+                    continue
+                raw_labels = np.load(label_file, allow_pickle=True).item()
+                
+                # 3. Handle Missing Depth (Synthetic data might not have saved it in augmentation)
+                # If 4-channel input is required, we need depth. 
+                # For now, if missing, we generate a dummy zero depth map or skip.
+                # Assuming synthetic data generation logic from previous steps:
+                depth_data = np.zeros(rgb_data.shape[:2], dtype=np.float32) 
+                
+                # 4. Construct Objects
+                image_obj = BeachCamImage(rgb_data, rgb_data.shape[:2])
+                depth_obj = DepthMap(depth_data)
+                
+                # Handle dictionary vs object labels
+                if isinstance(raw_labels, dict):
+                    labels_obj = WaveMetrics(
+                        height_meters=raw_labels.get('height', 0.0),
+                        direction=raw_labels.get('direction', 'STRAIGHT'),
+                        breaking_type=raw_labels.get('breaking_type', 'SPILLING')
+                    )
+                else:
+                    labels_obj = raw_labels
+
+                examples.append(TrainingExample(
+                    image_id=img_file.stem,
+                    rgb_image=image_obj,
+                    depth_map=depth_obj,
+                    labels=labels_obj,
+                    data_source=DataSource.SYNTHETIC,
+                    augmentation_applied=[]
+                ))
+            except Exception as e:
+                print(f"Error loading {img_file.name}: {e}")
+                continue
+                
+        return examples
+
     def __len__(self) -> int:
-        """Return dataset size."""
         return len(self.examples)
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        """Get dataset item by index.
-        
-        Args:
-            idx: Sample index
-            
-        Returns:
-            Dictionary with image, depth, and label tensors
-        """
         example = self.examples[idx]
         
         # Convert to tensors
         rgb_tensor = torch.from_numpy(example.rgb_image.rgb_data).float()
+        # Normalize to [0, 1] if currently [0, 255]
+        if rgb_tensor.max() > 1.0:
+            rgb_tensor /= 255.0
+
         depth_tensor = torch.from_numpy(example.depth_map.data).float()
         
-        # Resize to target resolution if needed
+        # Resize logic (Simple interpolation for now if sizes mismatch)
+        # In a real pipeline, use transforms.Resize
         if rgb_tensor.shape[:2] != self.target_resolution:
-            rgb_tensor = self._resize_tensor(rgb_tensor, self.target_resolution)
-            depth_tensor = self._resize_tensor(depth_tensor, self.target_resolution)
-        
-        # Create 4-channel input (RGB + Depth)
-        if len(rgb_tensor.shape) == 3:
-            rgb_tensor = rgb_tensor.permute(2, 0, 1)  # HWC -> CHW
+            import torch.nn.functional as F
+            # Permute for torch resize (C, H, W)
+            rgb_tensor = rgb_tensor.permute(2, 0, 1).unsqueeze(0)
+            rgb_tensor = F.interpolate(rgb_tensor, size=self.target_resolution, mode='bilinear', align_corners=False)
+            rgb_tensor = rgb_tensor.squeeze(0) # Keep as (C, H, W)
+        else:
+             rgb_tensor = rgb_tensor.permute(2, 0, 1) # HWC -> CHW
+
+        # Prepare 4-channel input
         if len(depth_tensor.shape) == 2:
-            depth_tensor = depth_tensor.unsqueeze(0)  # HW -> 1HW
+            depth_tensor = depth_tensor.unsqueeze(0) # HW -> 1HW
             
-        input_tensor = torch.cat([rgb_tensor, depth_tensor], dim=0)  # 4CHW
+        # Resize depth if needed
+        if depth_tensor.shape[1:] != self.target_resolution:
+             import torch.nn.functional as F
+             depth_tensor = depth_tensor.unsqueeze(0)
+             depth_tensor = F.interpolate(depth_tensor, size=self.target_resolution, mode='nearest')
+             depth_tensor = depth_tensor.squeeze(0)
+
+        # Concatenate RGB + Depth
+        input_tensor = torch.cat([rgb_tensor, depth_tensor], dim=0) # 4, H, W
         
-        # Prepare labels
-        labels = {
-            "height_meters": torch.tensor(example.labels.height_meters, dtype=torch.float32),
-            "direction_labels": torch.tensor(self._direction_to_index(example.labels.direction), dtype=torch.long),
-            "breaking_labels": torch.tensor(self._breaking_to_index(example.labels.breaking_type), dtype=torch.long),
-            "height_confidence": torch.tensor(example.labels.height_confidence, dtype=torch.float32),
-            "direction_confidence": torch.tensor(example.labels.direction_confidence, dtype=torch.float32),
-            "breaking_confidence": torch.tensor(example.labels.breaking_confidence, dtype=torch.float32)
-        }
-        
-        # Apply transforms if specified
-        if self.transform:
-            input_tensor = self.transform(input_tensor)
+        # Map Strings to Indices
+        dir_map = {"LEFT": 0, "RIGHT": 1, "STRAIGHT": 2}
+        break_map = {"SPILLING": 0, "PLUNGING": 1, "SURGING": 2}
         
         return {
             "input": input_tensor,
-            "labels": labels,
-            "metadata": {
-                "image_id": example.image_id,
-                "data_source": example.data_source.value,
-                "augmentations": example.augmentation_applied
+            "labels": {
+                "height": torch.tensor(example.labels.height_meters, dtype=torch.float32),
+                "direction": torch.tensor(dir_map.get(example.labels.direction, 2), dtype=torch.long),
+                "breaking_type": torch.tensor(break_map.get(example.labels.breaking_type, 0), dtype=torch.long)
             }
         }
-    
-    def _resize_tensor(self, tensor: torch.Tensor, target_size: Tuple[int, int]) -> torch.Tensor:
-        """Resize tensor to target size."""
-        # TODO: Implement tensor resizing
-        return tensor
-    
-    def _direction_to_index(self, direction: str) -> int:
-        """Convert direction string to class index."""
-        direction_map = {"LEFT": 0, "RIGHT": 1, "STRAIGHT": 2}
-        return direction_map.get(direction, 2)  # Default to STRAIGHT
-    
-    def _breaking_to_index(self, breaking_type: str) -> int:
-        """Convert breaking type string to class index."""
-        breaking_map = {"SPILLING": 0, "PLUNGING": 1, "SURGING": 2}
-        return breaking_map.get(breaking_type, 0)  # Default to SPILLING
-    
-    def _calculate_statistics(self) -> DatasetStatistics:
-        """Calculate dataset statistics."""
-        # TODO: Implement statistics calculation
-        return DatasetStatistics(
-            total_samples=len(self.examples),
-            real_samples=0,
-            synthetic_samples=0,
-            height_distribution={},
-            direction_distribution={},
-            breaking_type_distribution={}
-        )
-    
-    def _calculate_balance_metrics(self) -> DatasetBalance:
-        """Calculate dataset balance metrics."""
-        # TODO: Implement balance calculation
-        return DatasetBalance(
-            height_balance_score=0.8,
-            direction_balance_score=0.8,
-            breaking_balance_score=0.8,
-            overall_balance_score=0.8
-        )
-
-class SyntheticWaveDataset(WaveDataset):
-    """Specialized dataset for synthetic wave data."""
-    
-    def __init__(self,
-                 synthetic_images: List[SyntheticImage],
-                 split: DataSplit,
-                 transform: Optional[Any] = None):
-        """Initialize synthetic wave dataset.
-        
-        Args:
-            synthetic_images: List of synthetic images with labels
-            split: Dataset split type
-            transform: Optional data transforms
-        """
-        # Convert synthetic images to training examples
-        examples = []
-        for i, syn_img in enumerate(synthetic_images):
-            # Create BeachCamImage from synthetic data
-            beach_cam_img = BeachCamImage(
-                rgb_data=syn_img.rgb_data,
-                resolution=syn_img.rgb_data.shape[:2],
-                format=None,  # Synthetic doesn't have original format
-                quality_score=1.0  # Synthetic images are high quality
-            )
-            
-            example = TrainingExample(
-                image_id=f"synthetic_{i:06d}",
-                rgb_image=beach_cam_img,
-                depth_map=syn_img.depth_map,
-                labels=syn_img.ground_truth_labels,
-                data_source=DataSource.SYNTHETIC,
-                augmentation_applied=[]
-            )
-            examples.append(example)
-        
-        super().__init__(examples, split, transform)

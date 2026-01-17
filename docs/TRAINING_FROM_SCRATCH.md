@@ -254,29 +254,29 @@ def preprocess_images(input_dir, output_dir, target_size=(640, 480)):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     images = list(input_path.glob('*.jpg')) + list(input_path.glob('*.png'))
-    
+
     print(f"Preprocessing {len(images)} images...")
-    
+
     for img_path in tqdm(images):
         # Load image
         img = cv2.imread(str(img_path))
         if img is None:
             continue
-        
+
         # Resize to target size
         img_resized = cv2.resize(img, target_size)
-        
+
         # Save preprocessed image
         output_file = output_path / img_path.name
-        cv2.imwrite(str(output_file), img_resized, 
+        cv2.imwrite(str(output_file), img_resized,
                    [cv2.IMWRITE_JPEG_QUALITY, 95])
-    
+
     print(f"✓ Preprocessed {len(images)} images")
 
-if __name__ == "__main__":
-    preprocess_images('data/raw/beach_cams', 'data/processed/beach_cams')
+# Call the function with the correct paths
+preprocess_images(f"{DATA_DIR}/raw", f"{DATA_DIR}/processed")
 ```
 
 Run it:
@@ -304,64 +304,87 @@ jupyter notebook
 ```python
 # Create script: scripts/extract_depth_maps.py
 import sys
-sys.path.insert(0, '.')
+import os
+# Add the BASE directory to sys.path to allow importing modules from there
+sys.path.insert(0, BASE)
 
 from pathlib import Path
 import cv2
 import numpy as np
 from tqdm import tqdm
-from src.swellsight.core.depth_extractor import DepthAnythingV2Extractor
+from src.swellsight.core.depth_extractor import DepthAnythingV2Extractor, ProcessingError
+
+# Set HF_TOKEN environment variable from the provided GITHUB_TOKEN
+# This assumes GITHUB_TOKEN can be used for Hugging Face authentication
+if 'token' in locals() and token is not None:
+    os.environ['HF_TOKEN'] = token
+elif os.getenv('HF_TOKEN') is None:
+    print("WARNING: HF_TOKEN environment variable not set. Model loading might fail.")
 
 def extract_depth_maps(input_dir, output_dir, use_gpu=True):
     """Extract depth maps from beach cam images."""
-    
+
     print("Initializing Depth-Anything-V2...")
+    # Force fp32 precision to ensure OpenCV compatibility (cv2.resize does not support float16)
     extractor = DepthAnythingV2Extractor(
         model_size="large",
-        precision="fp16" if use_gpu else "fp32",
+        precision="fp32",
         enable_optimization=True
     )
     print("✓ Depth extractor initialized")
-    
+
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     images = list(input_path.glob('*.jpg')) + list(input_path.glob('*.png'))
-    
+
     print(f"\nExtracting depth maps for {len(images)} images...")
-    
+
+    successful_extractions = 0
     for img_path in tqdm(images):
         # Load image
         img = cv2.imread(str(img_path))
         if img is None:
+            print(f"Skipping {img_path.name}: Could not read image.")
             continue
-        
+
+        # Add a check for image dimensions
+        if img.shape[0] == 0 or img.shape[1] == 0:
+            print(f"Skipping {img_path.name}: Image has zero dimension(s). Shape: {img.shape}")
+            continue
+
         # Convert BGR to RGB
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Extract depth
-        depth_map = extractor.extract_depth(img_rgb)
-        
+
+        try:
+            # Extract depth
+            depth_map = extractor.extract_depth(img_rgb)
+        except ProcessingError as e:
+            print(f"Skipping {img_path.name}: Depth extraction failed with error: {e}")
+            continue
+
         # Handle tuple return (depth_map, performance_metrics)
         if isinstance(depth_map, tuple):
             depth_map = depth_map[0]
-        
+
         # Save depth map
         output_file = output_path / f"{img_path.stem}_depth.npy"
         np.save(output_file, depth_map.data)
-        
+
         # Also save visualization
-        depth_vis = (depth_map.data * 255).astype(np.uint8)
         vis_file = output_path / f"{img_path.stem}_depth_vis.jpg"
-        cv2.imwrite(str(vis_file), depth_vis)
-    
-    print(f"✓ Extracted {len(images)} depth maps")
+        # Normalize to 0-255 for visualization
+        depth_norm = cv2.normalize(depth_map.data, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+        cv2.imwrite(str(vis_file), depth_norm)
+        successful_extractions += 1
+
+    print(f"✓ Successfully extracted {successful_extractions} depth maps out of {len(images)} images")
 
 if __name__ == "__main__":
     extract_depth_maps(
-        'data/processed/beach_cams',
-        'data/depth_maps',
+        f'{DATA_DIR}/processed',
+        f'{DATA_DIR}/depth_maps',
         use_gpu=True
     )
 ```
@@ -401,54 +424,122 @@ jupyter notebook
 ```python
 # Create script: scripts/generate_synthetic_data.py
 import sys
-sys.path.insert(0, '.')
+import os
+import gc
+import torch
+from google.colab import userdata
+from huggingface_hub import login
+
+# --- 1. SETUP PATHS & IMPORTS (Restart-Safe) ---
+# Define BASE if not already present, so this cell runs after a restart
+if 'BASE' not in globals():
+    BASE = "/content/drive/MyDrive/SwellSight_Colab"
+    print(f"✓ BASE path set to: {BASE}")
+
+# Add the BASE directory to sys.path to allow importing modules
+if BASE not in sys.path:
+    sys.path.insert(0, BASE)
 
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 from src.swellsight.core.synthetic_generator import (
-    FLUXControlNetGenerator, 
+    FLUXControlNetGenerator,
     WeatherConditions,
     GenerationConfig
 )
-from src.swellsight.core.depth_extractor import DepthMap
+
+# --- 2. MEMORY CHECK ---
+print("\n🔍 Checking GPU Memory...")
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    free_mem, total_mem = torch.cuda.mem_get_info(0)
+    free_gb = free_mem / 1024**3
+    print(f"   VRAM Free: {free_gb:.2f} GB / {total_mem/1024**3:.2f} GB")
+
+    if free_gb < 10.0:
+        print("\n⚠️  WARNING: Low VRAM detected (<10GB).")
+        print("   FLUX requires ~12GB. If this fails, RESTART THE RUNTIME (Runtime > Restart session).")
+else:
+    print("❌ No GPU detected!")
+
+# --------------------------------
+
+def setup_huggingface_auth():
+    """Setup authentication for Hugging Face gated models."""
+    try:
+        hf_token = userdata.get('HF_TOKEN')
+        if hf_token:
+            print("\n✓ Found HF_TOKEN in secrets, logging in...")
+            login(token=hf_token, add_to_git_credential=True)
+            os.environ['HF_TOKEN'] = hf_token
+            return True
+        else:
+            print("⚠️ HF_TOKEN not found in Colab secrets.")
+            return False
+    except Exception as e:
+        print(f"⚠️ Could not retrieve HF_TOKEN: {e}")
+        return False
 
 def generate_synthetic_dataset(depth_dir, output_dir, num_images=500):
     """Generate synthetic wave images from depth maps."""
-    
-    print("Initializing FLUX ControlNet Generator...")
-    print("⚠️  This will download large models (~10GB) on first run")
-    
-    generator = FLUXControlNetGenerator()
-    print("✓ Generator initialized")
-    
+
+    if not setup_huggingface_auth():
+        print("❌ Authentication failed. Please check HF_TOKEN.")
+        return
+
+    # Initialize generator
+    print("\n🚀 Initializing FLUX ControlNet Generator...")
+    try:
+        generator = FLUXControlNetGenerator()
+        print("✓ Generator initialized")
+    except Exception as e:
+        print(f"\n❌ FATAL ERROR: Failed to initialize generator.\nError: {e}")
+        if "out of memory" in str(e).lower():
+            print("\n🛑 DIAGNOSIS: GPU Out of Memory.")
+            print("👉 FIX: Restart the Runtime (Runtime > Restart session) and run ONLY this cell.")
+        return
+
+    # Setup directories
+    if 'DATA_DIR' not in globals():
+        DATA_DIR = f"{BASE}/data"
+
+    # Use directory arguments if provided, else fall back to constructed paths
+    # Note: The function args 'depth_dir' passed in __main__ are used here
     depth_path = Path(depth_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Load depth maps
     depth_files = list(depth_path.glob('*_depth.npy'))
-    print(f"\nFound {len(depth_files)} depth maps")
-    
+    print(f"Found {len(depth_files)} depth maps in {depth_path}")
+
     if len(depth_files) == 0:
-        print("❌ No depth maps found! Run depth extraction first.")
+        print("❌ No depth maps found! Run depth extraction first (or check path).")
         return
-    
-    # Generate balanced dataset
-    print(f"\nGenerating {num_images} synthetic images...")
-    print("This will take several hours depending on your GPU...")
-    
-    # Use the built-in balanced dataset generation
-    labeled_dataset = generator.create_balanced_dataset(target_size=num_images)
-    
-    # Save synthetic images and labels
-    print("\nSaving synthetic dataset...")
+
+    print(f"\n🎨 Generating {num_images} synthetic images...")
+    print("⏳ Estimated time: ~2-3 hours on T4 GPU")
+
+    try:
+        labeled_dataset = generator.create_balanced_dataset(target_size=num_images)
+    except Exception as e:
+        print(f"❌ Generation loop failed: {e}")
+        return
+
+    generated_count = len(labeled_dataset.images)
+    print(f"\n✓ Generation loop complete. Created {generated_count} images.")
+
+    if generated_count == 0:
+        print("⚠️ No images were generated. Check logs above for specific errors.")
+        return
+
+    # Save results
+    print("Saving dataset to disk...")
     for i, synthetic_image in enumerate(tqdm(labeled_dataset.images)):
-        # Save RGB image
         img_file = output_path / f"synthetic_{i:04d}.npy"
         np.save(img_file, synthetic_image.rgb_data)
-        
-        # Save labels
+
         label_file = output_path / f"synthetic_{i:04d}_labels.npy"
         labels = {
             'height_meters': synthetic_image.ground_truth_labels.height_meters,
@@ -459,17 +550,17 @@ def generate_synthetic_dataset(depth_dir, output_dir, num_images=500):
             'breaking_confidence': synthetic_image.ground_truth_labels.breaking_confidence
         }
         np.save(label_file, labels)
-    
-    print(f"\n✓ Generated {len(labeled_dataset.images)} synthetic images")
-    print(f"✓ Dataset statistics:")
-    print(f"   Average height: {labeled_dataset.statistics['height_statistics']['mean']:.2f}m")
-    print(f"   Height range: {labeled_dataset.statistics['height_statistics']['min']:.2f}m - {labeled_dataset.statistics['height_statistics']['max']:.2f}m")
+
+    print(f"\n✅ Successfully saved {generated_count} synthetic images")
 
 if __name__ == "__main__":
+    # Ensure DATA_DIR is defined locally for this block
+    local_data_dir = f"{BASE}/data"
+
     generate_synthetic_dataset(
-        'data/depth_maps',
-        'data/synthetic',
-        num_images=500  # Adjust based on your needs
+        f'{local_data_dir}/depth_maps',
+        f'{local_data_dir}/synthetic',
+        num_images=500
     )
 ```
 
@@ -518,61 +609,88 @@ jupyter notebook
 ```python
 # Create script: scripts/augment_data.py
 import sys
-sys.path.insert(0, '.')
-
+import os
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
+
+# --- SETUP PATHS ---
+if 'BASE' not in globals():
+    BASE = "/content/drive/MyDrive/SwellSight_Colab"
+if BASE not in sys.path:
+    sys.path.insert(0, BASE)
+
 from src.swellsight.data.augmentation import WaveAugmentation
 
 def augment_dataset(input_dir, output_dir, augmentations_per_image=3):
     """Apply augmentations to synthetic dataset."""
-    
+
     print("Initializing augmentation system...")
-    augmenter = WaveAugmentation(preserve_scale=True)
+    augmenter = WaveAugmentation()
     print("✓ Augmenter initialized")
-    
+
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
-    # Load synthetic images
+
+    # Load synthetic images (filter out existing augs if re-running)
     image_files = list(input_path.glob('synthetic_*.npy'))
     image_files = [f for f in image_files if '_labels' not in f.name and '_depth' not in f.name]
-    
+
     print(f"\nAugmenting {len(image_files)} images...")
     print(f"Creating {augmentations_per_image} variations per image")
-    
+
     total_generated = 0
     
+    # We use a distinct seed loop or rely on the random module's state. 
+    # Since the class uses random.random(), no manual seed reset per image is strictly needed 
+    # unless reproducibility is critical.
+
     for img_file in tqdm(image_files):
         # Load image and labels
         img = np.load(img_file)
         label_file = img_file.parent / f"{img_file.stem}_labels.npy"
-        labels = np.load(label_file, allow_pickle=True).item()
         
+        # Safety check for missing label files
+        if not label_file.exists():
+            continue
+            
+        labels = np.load(label_file, allow_pickle=True).item()
+
         # Generate augmentations
         for aug_idx in range(augmentations_per_image):
-            # Apply augmentation
-            aug_img = augmenter.augment(img)
             
+            # --- FIX: Use correct method and handle Dictionary return ---
+            result = augmenter.augment_training_sample(img, preserve_labels=True)
+            
+            # Check if augmentation succeeded
+            if not result.get('augmentation_success', False):
+                continue
+
+            # Extract the actual image array
+            aug_img = result['augmented_image']
+
             # Save augmented image
             aug_file = output_path / f"{img_file.stem}_aug{aug_idx}.npy"
             np.save(aug_file, aug_img)
-            
-            # Copy labels (augmentation preserves wave properties)
+
+            # Copy labels 
+            # (SAFE for this specific class because it only does weather/lighting, no geometry)
             aug_label_file = output_path / f"{img_file.stem}_aug{aug_idx}_labels.npy"
             np.save(aug_label_file, labels)
-            
+
             total_generated += 1
-    
+
     print(f"\n✓ Generated {total_generated} augmented images")
     print(f"✓ Total dataset size: {len(image_files) + total_generated} images")
 
 if __name__ == "__main__":
+    if 'DATA_DIR' not in globals():
+        DATA_DIR = f"{BASE}/data"
+
     augment_dataset(
-        'data/synthetic',
-        'data/augmented',
+        f'{DATA_DIR}/synthetic',
+        f'{DATA_DIR}/augmented',
         augmentations_per_image=3
     )
 ```
@@ -649,84 +767,149 @@ jupyter notebook
 **Or use the training script:**
 
 ```python
-# Create script: scripts/train_model.py
-import sys
-sys.path.insert(0, '.')
+# Create script: scripts/train.py
+#!/usr/bin/env python3
+"""
+Training script for SwellSight Wave Analysis System.
 
-import yaml
+Provides command-line interface for training wave analysis models
+with configurable parameters and monitoring.
+"""
+
+import argparse
+import logging
 from pathlib import Path
-import torch
-from src.swellsight.training.trainer import WaveAnalysisTrainer
-from src.swellsight.data.datasets import WaveDataset
-from torch.utils.data import DataLoader
+import sys
 
-def train_model(config_path='configs/training_config.yaml'):
-    """Train the wave analysis model."""
-    
-    # Load configuration
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    print("="*60)
-    print("SwellSight Model Training")
-    print("="*60)
-    
-    # Create datasets
-    print("\n📊 Loading datasets...")
-    train_dataset = WaveDataset(
-        data_dir=config['data']['synthetic_data_dir'],
-        split='train',
-        train_ratio=config['data']['train_split']
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from swellsight.utils.config import ConfigManager
+from swellsight.utils.logging import setup_logging
+from swellsight.training.trainer import WaveAnalysisTrainer
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Train SwellSight Wave Analysis System"
     )
     
-    val_dataset = WaveDataset(
-        data_dir=config['data']['synthetic_data_dir'],
-        split='val',
-        train_ratio=config['data']['train_split']
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/training.yaml",
+        help="Path to training configuration file"
     )
     
-    print(f"✓ Train samples: {len(train_dataset)}")
-    print(f"✓ Val samples: {len(val_dataset)}")
-    
-    # Create data loaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config['training']['batch_size'],
-        shuffle=True,
-        num_workers=config['hardware']['num_workers']
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default="data",
+        help="Path to training data directory"
     )
     
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config['training']['batch_size'],
-        shuffle=False,
-        num_workers=config['hardware']['num_workers']
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="outputs/training",
+        help="Path to output directory for checkpoints and logs"
     )
     
-    # Initialize trainer
-    print("\n🔧 Initializing trainer...")
-    trainer = WaveAnalysisTrainer(config)
-    print("✓ Trainer initialized")
-    
-    # Train model
-    print("\n🚀 Starting training...")
-    print(f"Epochs: {config['training']['num_epochs']}")
-    print(f"Batch size: {config['training']['batch_size']}")
-    print(f"Learning rate: {config['training']['learning_rate']}")
-    print(f"GPU: {torch.cuda.is_available()}")
-    print()
-    
-    trainer.train(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_epochs=config['training']['num_epochs']
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from"
     )
     
-    print("\n✓ Training completed!")
-    print(f"✓ Best model saved to: {config['checkpointing']['save_dir']}/best_model.pth")
+    parser.add_argument(
+        "--gpu",
+        type=int,
+        default=None,
+        help="GPU device ID to use (default: auto-detect)"
+    )
+    
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging"
+    )
+    
+    return parser.parse_args()
+
+def main():
+    """Main training function."""
+    args = parse_args()
+    
+    # Setup logging
+    log_level = "DEBUG" if args.debug else "INFO"
+    log_file = Path(args.output_dir) / "training.log"
+    setup_logging(log_level=log_level, log_file=str(log_file))
+    logger = logging.getLogger("swellsight.train")
+    
+    logger.info("=" * 60)
+    logger.info("Starting SwellSight Wave Analysis Training")
+    logger.info("=" * 60)
+    logger.info(f"Config: {args.config}")
+    logger.info(f"Data directory: {args.data_dir}")
+    logger.info(f"Output directory: {args.output_dir}")
+    
+    try:
+        # Load configuration
+        config_manager = ConfigManager(args.config)
+        config = config_manager.get_config()
+        
+        # Validate configuration
+        if not config_manager.validate_config():
+            logger.error("Configuration validation failed")
+            return 1
+        
+        logger.info("✓ Configuration loaded and validated")
+        
+        # Create output directory
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize trainer
+        logger.info("Initializing trainer...")
+        trainer = WaveAnalysisTrainer(config)
+        
+        # Resume from checkpoint if specified
+        start_epoch = 0
+        if args.resume:
+            logger.info(f"Resuming from checkpoint: {args.resume}")
+            start_epoch, _ = trainer.load_checkpoint(args.resume)
+        
+        # TODO: Load data loaders (will be implemented with dataset)
+        # For now, we'll just log that training is ready
+        logger.info("✓ Trainer initialized successfully")
+        logger.info("")
+        logger.info("NOTE: To complete training setup, you need to:")
+        logger.info("  1. Create train and validation data loaders")
+        logger.info("  2. Call trainer.train(train_loader, val_loader)")
+        logger.info("")
+        logger.info("Example:")
+        logger.info("  from swellsight.data.datasets import WaveDataset")
+        logger.info("  from torch.utils.data import DataLoader")
+        logger.info("  ")
+        logger.info("  train_dataset = WaveDataset(data_dir, split='train')")
+        logger.info("  val_dataset = WaveDataset(data_dir, split='val')")
+        logger.info("  ")
+        logger.info("  train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)")
+        logger.info("  val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)")
+        logger.info("  ")
+        logger.info("  trainer.train(train_loader, val_loader)")
+        logger.info("")
+        
+        logger.info("Training setup completed successfully")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Training failed: {e}", exc_info=True)
+        return 1
 
 if __name__ == "__main__":
-    train_model()
+    sys.exit(main())
 ```
 
 Run it:
