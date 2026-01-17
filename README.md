@@ -4,6 +4,8 @@
 
 **An AI-powered system that analyzes beach cam footage to provide critical wave metrics for surfers**
 
+**[Model E2E Pipeline Notebook](https://colab.research.google.com/drive/1YrqgS-ASdkxLKMhYFYFsA5aPPYNTJA77?usp=sharing)**
+
 **[Download SwellSight Dataset](https://drive.google.com/drive/folders/1PzltcsUP6FiYyBNOkNP6dQ6_HABJvE4r?usp=sharing)**
 
 ⚠️ **IMPORTANT**: Haven't trained the model yet? → **[START HERE](docs/START_HERE.md)** ⭐
