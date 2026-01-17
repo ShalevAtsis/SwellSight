@@ -2,9 +2,9 @@
 
 <div align="center">
 
-![SwellSight Logo](https://img.shields.io/badge/SwellSight-v2.0-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTMgMTJMMTIgM0wyMSAxMkwxMiAyMUwzIDEyWiIgc3Ryb2tlPSIjMDA3N0ZGIiBzdHJva2Utd2lkdGg9IjIiLz4KPHN2Zz4K)
-
 **An AI-powered system that analyzes beach cam footage to provide critical wave metrics for surfers**
+
+**[Download SwellSight Dataset](https://drive.google.com/drive/folders/1PzltcsUP6FiYyBNOkNP6dQ6_HABJvE4r?usp=sharing)**
 
 ⚠️ **IMPORTANT**: Haven't trained the model yet? → **[START HERE](docs/START_HERE.md)** ⭐
 
