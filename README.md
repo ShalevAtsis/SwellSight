@@ -471,7 +471,7 @@ SwellSight employs a two-phase training approach to overcome data scarcity:
 
 **Objective**: Learn wave analysis from synthetic data with perfect labels
 
-**Dataset**: 5,000+ synthetic images with known parameters
+**Dataset**: 500+ synthetic images with known parameters
 - Generated using FLUX.1-dev + ControlNet
 - Diverse weather and lighting conditions
 - Automatic labeling from depth geometry
@@ -500,7 +500,7 @@ pretrain_config = {
 
 **Objective**: Adapt to real beach cam imagery
 
-**Dataset**: ~500 manually labeled real images
+**Dataset**: ~700 manually labeled real images
 - Collected from beach cameras
 - Various conditions and locations
 - Expert-validated labels
