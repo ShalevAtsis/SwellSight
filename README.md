@@ -123,7 +123,7 @@ graph TD
 - **Location**: Multiple beaches with varying wave conditions
 - **Resolution**: 1920×1080 to 4K video streams
 - **Conditions**: Dawn, day, dusk, various weather conditions
-- **Size**: ~500 manually labeled images for validation and fine-tuning
+- **Size**: ~700 manually labeled images for validation and fine-tuning
 - **Labels**: Wave height (meters), direction (left/right/straight), breaking type
 
 **Collection Process**:
@@ -139,7 +139,7 @@ data/real/
 ### Synthetic Training Data
 
 **Generated using**: FLUX.1-dev + ControlNet-Depth
-- **Size**: 5,000+ synthetic wave images
+- **Size**: 500+ synthetic wave images
 - **Diversity**: Multiple weather conditions, lighting, wave types
 - **Perfect Labels**: Exact wave parameters from depth map geometry
 - **Conditions**: Stormy, sunny, foggy, sunset, overcast
