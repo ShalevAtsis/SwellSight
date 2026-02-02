@@ -1200,7 +1200,5 @@ After training:
 
 **Need Help?** 
 - Check [User Guide](USER_GUIDE.md) for usage after training
-- See [GitHub Issues](https://github.com/yourusername/SwellSight_Colab/issues) for problems
-- Join [Discord](https://discord.gg/swellsight) for community support
 
 Good luck with your training! 🏄‍♂️🌊
