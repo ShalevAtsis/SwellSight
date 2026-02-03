@@ -100,11 +100,24 @@ graph TD
     G --> H[🌊 Wave Height: 1.5m]
     G --> I[🧭 Direction: Right]
     G --> J[💥 Breaking: Spilling]
-    
-    style A fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style C fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style E fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    style G fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+
+    %% Core pipeline
+    style A fill:#eef4fb,stroke:#5b7db1,stroke-width:2px,color:#0f172a
+    style B fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+
+    style C fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#1f2937
+    style D fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+
+    style E fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#1f2937
+    style F fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a
+
+    style G fill:#ecfdf5,stroke:#22c55e,stroke-width:2px,color:#064e3b
+
+    %% Output metrics
+    style H fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a
+    style I fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a
+    style J fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a
+
 ```
 
 ### Key Innovation: Sim-to-Real Learning
