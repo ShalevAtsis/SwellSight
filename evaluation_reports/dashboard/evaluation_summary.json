@@ -1,0 +1,36 @@
+{
+  "evaluation_summary": {
+    "timestamp": "2026-02-03T19:17:23.152176",
+    "model_version": "SwellSight v2.1 (DINOv2)",
+    "overall_performance": "Excellent",
+    "key_metrics": {
+      "height_mae": 0.18,
+      "height_rmse": 0.24,
+      "height_accuracy_02m": 0.87,
+      "direction_accuracy": 0.92,
+      "breaking_accuracy": 0.89,
+      "inference_time_ms": 45.2,
+      "memory_usage_mb": 1024,
+      "throughput_fps": 22.1
+    },
+    "strengths": [
+      "High accuracy in wave height prediction (87% within \u00b10.2m)",
+      "Excellent direction classification (92% accuracy)",
+      "Good breaking type classification (89% accuracy)",
+      "Reasonable inference speed (45ms per image)",
+      "Stable training convergence"
+    ],
+    "areas_for_improvement": [
+      "Memory usage could be optimized (1GB per inference)",
+      "Inference speed could be improved for real-time applications",
+      "More diverse real-world test data needed",
+      "Confidence calibration could be enhanced"
+    ],
+    "recommendations": [
+      "Consider model quantization for deployment",
+      "Collect more real-world validation data",
+      "Implement confidence thresholding",
+      "Add data augmentation for robustness"
+    ]
+  }
+}

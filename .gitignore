@@ -48,6 +48,7 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+.kiro/
 .pytest_cache/
 cover/
 
@@ -170,7 +171,6 @@ data/evaluation/
 outputs/
 logs/
 checkpoints/
-evaluation_reports/
 
 # Model files
 *.pth
