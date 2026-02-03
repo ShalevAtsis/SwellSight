@@ -600,7 +600,7 @@ results = trainer.train_sim_to_real()
 
 ### 🎯 Performance Dashboard
 
-**[📈 View Interactive Evaluation Dashboard](evaluation_reports/dashboard/index.html)**
+**[📈 View Interactive Evaluation Dashboard](https://htmlpreview.github.io/?https://github.com/ShalevAtsis/SwellSight_Colab/blob/main/evaluation_reports/dashboard/index.html)**
 
 <div align="center">
 
@@ -632,20 +632,6 @@ results = trainer.train_sim_to_real()
 #### Data Quality & Pipeline Insights
 ![Data Insights](evaluation_reports/dashboard/data_insights.png)
 *Dataset distribution, quality scores, wave height distribution, and processing pipeline performance*
-
-### 🔍 Real-time Monitoring
-
-#### Live Performance Tracking
-![Real-time Monitoring](evaluation_reports/monitoring/realtime_monitoring.png)
-*Real-time inference metrics, memory usage, accuracy trends, and error rate monitoring*
-
-#### System Health Dashboard
-![System Health](evaluation_reports/monitoring/system_health.png)
-*CPU/GPU utilization, request volumes, confidence distributions, and system alerts*
-
-#### Production Deployment Metrics
-![Deployment Metrics](evaluation_reports/monitoring/deployment_metrics.png)
-*Traffic distribution, geographic usage, API endpoint statistics, and operational costs*
 
 ### Evaluation Metrics
 
@@ -963,7 +949,7 @@ SwellSight_Colab/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/SwellSight_Colab.git
+git clone https://github.com/ShalevAtsis/SwellSight_Colab.git
 cd SwellSight_Colab
 
 # Create and activate virtual environment
@@ -1000,7 +986,7 @@ print(f"Confidence: {result.pipeline_confidence:.1%}")
 
 ### 📊 View Model Performance
 
-**[📈 Interactive Evaluation Dashboard](evaluation_reports/dashboard/index.html)** - Comprehensive model performance metrics, training progress, and real-time monitoring visualizations.
+**[📈 Interactive Evaluation Dashboard](https://htmlpreview.github.io/?https://github.com/ShalevAtsis/SwellSight_Colab/blob/main/evaluation_reports/dashboard/index.html)** - Comprehensive model performance metrics, training progress, and real-time monitoring visualizations.
 
 ```bash
 # Generate fresh evaluation reports
