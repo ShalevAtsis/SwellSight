@@ -17,7 +17,10 @@ from typing import Dict, Any
 from .endpoints import router
 from .v1 import api_v1_router
 from .deployment import ModelServer
+from .middleware.rate_limit import RateLimitMiddleware
 from ..core.pipeline import WaveAnalysisPipeline
+from ..platform.checks import platform_readiness
+from ..platform.settings import get_settings
 from ..utils.logging import setup_logging
 
 # Global model server instance
@@ -45,26 +48,33 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger("swellsight.api")
     logger.info("Starting SwellSight API server...")
     
+    settings = get_settings()
+    settings.validate_startup()
+
     try:
-        # Initialize model server
-        logger.info("Initializing model server...")
-        model_server = ModelServer()
-        success = model_server.initialize_models()
-        
-        if not success:
-            logger.warning("Model server initialized with warnings")
+        if settings.skip_model_server:
+            logger.info("SWELLSIGHT_SKIP_MODEL_SERVER set — platform API only (no sync pipeline)")
+            app.state.model_server = None
+            app.state.pipeline = None
+            app.state.start_time = server_start_time
         else:
-            logger.info("Model server initialized successfully")
-        
-        # Store model server in app state
-        app.state.model_server = model_server
-        app.state.pipeline = model_server.pipeline
-        app.state.start_time = server_start_time
-        
+            logger.info("Initializing model server...")
+            model_server = ModelServer()
+            success = model_server.initialize_models()
+
+            if not success:
+                logger.warning("Model server initialized with warnings")
+            else:
+                logger.info("Model server initialized successfully")
+
+            app.state.model_server = model_server
+            app.state.pipeline = model_server.pipeline
+            app.state.start_time = server_start_time
+
         logger.info("SwellSight API server startup complete")
-        
+
     except Exception as e:
-        logger.error(f"Failed to initialize model server: {e}")
+        logger.error(f"Failed to initialize API: {e}")
         raise
     
     yield
@@ -103,15 +113,19 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
     
-    # Add middleware
+    settings = get_settings()
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Configure appropriately for production
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
-    
+    app.add_middleware(
+        RateLimitMiddleware,
+        limit_per_minute=settings.rate_limit_per_minute,
+    )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     
     # Legacy analysis routes + platform v1 (auth, analyses queue)
@@ -160,20 +174,23 @@ def create_app() -> FastAPI:
     @app.get("/ready")
     async def readiness_check():
         """Readiness probe for container orchestration."""
+        if shutdown_requested:
+            raise HTTPException(status_code=503, detail="Shutdown in progress")
+
+        settings = get_settings()
+        if settings.skip_model_server:
+            report = platform_readiness()
+            if report["status"] != "ready":
+                raise HTTPException(status_code=503, detail=report)
+            return {**report, "timestamp": time.time()}
+
         try:
-            if shutdown_requested:
-                raise HTTPException(status_code=503, detail="Shutdown in progress")
-            
-            # Check if pipeline is ready
-            if hasattr(app.state, 'pipeline') and app.state.pipeline:
+            if hasattr(app.state, "pipeline") and app.state.pipeline:
                 status = app.state.pipeline.get_pipeline_status()
                 if status.get("components_initialized", False):
                     return {"status": "ready", "timestamp": time.time()}
-                else:
-                    raise HTTPException(status_code=503, detail="Pipeline not ready")
-            else:
-                raise HTTPException(status_code=503, detail="Pipeline not available")
-                
+                raise HTTPException(status_code=503, detail="Pipeline not ready")
+            raise HTTPException(status_code=503, detail="Pipeline not available")
         except HTTPException:
             raise
         except Exception as e:

@@ -29,6 +29,10 @@ services:
       DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET: dev-secret-change-in-prod
+      SWELLSIGHT_SKIP_MODEL_SERVER: "1"
+      CORS_ORIGINS: http://localhost:3000
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_ROOT: /app/data/uploads
       PYTHONPATH: /app/src
     depends_on:
       - postgres

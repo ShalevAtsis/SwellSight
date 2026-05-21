@@ -4,7 +4,6 @@ Database session management.
 
 from __future__ import annotations
 
-import os
 from typing import Generator
 
 from sqlalchemy import create_engine
@@ -12,12 +11,22 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+psycopg2://swellsight:swellsight@localhost:5432/swellsight",
-)
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+def _database_url() -> str:
+    from swellsight.platform.settings import get_settings
+
+    return get_settings().database_url
+
+
+def _create_engine():
+    url = _database_url()
+    connect_args = {}
+    if url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+    return create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+
+
+engine = _create_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -29,5 +38,8 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from swellsight.api.validation import validate_image_upload
 from swellsight.api.v1.deps import get_current_user
 from swellsight.db.models import Analysis, User
 from swellsight.db.session import get_db
-from swellsight.jobs.queue import JobQueue
+from swellsight.platform.dependencies import get_idempotency_store, get_job_queue
+from swellsight.platform.settings import get_settings
+from swellsight.storage import get_storage
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
-UPLOAD_ROOT = Path(__file__).resolve().parents[5] / "data" / "uploads"
+
+MIME_EXT = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 
 class AnalysisResponse(BaseModel):
@@ -44,41 +51,79 @@ def _to_response(row: Analysis) -> AnalysisResponse:
     )
 
 
+def _start_of_utc_day() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 @router.post("", response_model=AnalysisResponse, status_code=202)
 async def create_analysis(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    settings = get_settings()
 
-    analysis_id = str(uuid.uuid4())
-    user_dir = UPLOAD_ROOT / user.id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "image.jpg").suffix or ".jpg"
-    storage_key = str(user_dir / f"{analysis_id}{ext}")
+    if idempotency_key:
+        store = get_idempotency_store()
+        existing_id = store.get_analysis_id(user.id, idempotency_key)
+        if existing_id:
+            row = (
+                db.query(Analysis)
+                .filter(Analysis.id == existing_id, Analysis.user_id == user.id)
+                .first()
+            )
+            if row:
+                return _to_response(row)
+
+    start_of_day = _start_of_utc_day()
+    daily_count = (
+        db.query(Analysis)
+        .filter(Analysis.user_id == user.id, Analysis.created_at >= start_of_day)
+        .count()
+    )
+    if daily_count >= settings.analyses_per_day_limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily analysis limit reached ({settings.analyses_per_day_limit}/day)",
+        )
 
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
-    Path(storage_key).write_bytes(content)
+    detected_mime, _, _ = validate_image_upload(
+        content,
+        file.content_type,
+        settings.max_upload_bytes,
+        settings.max_image_dimension,
+    )
+
+    analysis_id = str(uuid.uuid4())
+    ext = MIME_EXT.get(detected_mime, ".jpg")
+    object_key = f"{user.id}/{analysis_id}{ext}"
+
+    storage = get_storage()
+    storage.put(object_key, content, content_type=detected_mime)
 
     row = Analysis(
         id=analysis_id,
         user_id=user.id,
         status="pending",
-        storage_key=storage_key,
+        storage_key=object_key,
     )
     db.add(row)
     db.commit()
+    db.refresh(row)
+
+    if idempotency_key:
+        get_idempotency_store().set_analysis_id(user.id, idempotency_key, analysis_id)
 
     try:
-        JobQueue().enqueue(analysis_id, user.id, storage_key)
+        get_job_queue().enqueue(analysis_id, user.id, object_key)
     except Exception as exc:
         row.status = "failed"
         row.error_message = f"Queue unavailable: {exc}"
         db.commit()
+        db.refresh(row)
 
     return _to_response(row)
 
