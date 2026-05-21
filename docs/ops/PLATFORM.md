@@ -4,13 +4,15 @@ Backend stack: FastAPI API, Postgres, Redis queue, GPU worker.
 
 ## Quick start (local)
 
+Full step-by-step (Windows + Linux): **[RUN_LOCALLY.md](../RUN_LOCALLY.md)**.
+
 ```bash
 pip install -e ".[platform,inference]"
 docker compose -f deploy/docker-compose.platform.yml up -d postgres redis
 cp .env.example .env
 alembic upgrade head
 export SWELLSIGHT_SKIP_MODEL_SERVER=1
-uvicorn swellsight.api.server:app --reload --port 8000
+python -m uvicorn swellsight.api.server:app --reload --port 8000
 python scripts/worker.py
 ```
 

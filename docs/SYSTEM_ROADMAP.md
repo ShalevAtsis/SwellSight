@@ -2,9 +2,24 @@
 
 **Purpose:** Step-by-step plan from the current repository state to a **production-deployed** surfer-facing product: upload a beach photo → receive wave metrics and a **surf score** powered by a fully integrated AI pipeline.
 
-**How to use this document:** Work phases in order unless noted. Mark tasks `- [x]` when done. Link PRs/issues to task IDs (e.g. `P2-T04`).
+**How to use this document:** Work phases in order unless noted. Mark tasks `- [x]` when done, `- [~]` when partial. Link PRs/issues to task IDs (e.g. `P2-T04`).
 
-**Related docs:** [MODEL_GUIDE.md](MODEL_GUIDE.md) (model commands today), [START_HERE.md](START_HERE.md), [TRAINING_FROM_SCRATCH.md](TRAINING_FROM_SCRATCH.md).
+**Related docs:** [MODEL_GUIDE.md](MODEL_GUIDE.md), [RUN_LOCALLY.md](RUN_LOCALLY.md) (full stack A–Z), [START_HERE.md](START_HERE.md), [TRAINING_FROM_SCRATCH.md](TRAINING_FROM_SCRATCH.md).
+
+---
+
+## Progress summary (2026-05-21)
+
+| Phase | Done | Partial | Open | % complete |
+|-------|------|---------|------|------------|
+| **P0** Foundation | 6 | 0 | 1 | 86% (#6 tests) |
+| **P1** ML platform | 17 | 2 | 0 | ~94% |
+| **P2** MLOps | 6 | 0 | 1 | 86% (#30 DVC) |
+| **P3** Backend | 26 | 2 | 3 | ~87% |
+| **P4** Web UI | 11 | 2 | 4 | ~79% |
+| **P5** Production | 1 | 1 | 22 | ~8% |
+
+**Product path today:** Web → API → queue → worker → surf score works locally per [RUN_LOCALLY.md](RUN_LOCALLY.md). **Next focus:** P5 production (split Dockerfiles, full CI/CD, observability) + P4 polish (thumbnails, a11y, share).
 
 ---
 
@@ -70,14 +85,12 @@ Not “AI marketing” — concrete engineering goals:
 
 ### Gaps (block production)
 
-- No **user DB**, auth, or persistent storage for uploads/results
-- No **job queue** (long inference blocks HTTP)
-- No **surf score** product logic
-- No **web UI**
-- Colab-tied **depth/synthetic** scripts
-- No **CI/CD**, containers, or environment parity
-- Trainer missing sim-to-real orchestration, schedulers, `MultiTaskLoss` wiring
-- API not integrated with checkpoint config / auth / rate limits for real traffic
+- **P5:** Split API/worker Dockerfiles, production CI/CD, observability, TLS, runbooks
+- **P4 polish:** History thumbnails, forgot-password, share/export, formal a11y pass
+- **P3:** `spots` schema, legacy `endpoints.py` refactor, JWT refresh, S3 pre-signed download URLs
+- **P2:** Dataset versioning (DVC / manifest hash in registry)
+- **P0:** Full test suite green on CI (#6)
+- Colab still useful for **FLUX** at scale; local synthetic script exists for smaller runs
 
 ---
 
@@ -300,12 +313,12 @@ flowchart LR
 
 | Phase  | Name                 | Goal                                     | Exit criteria                                            |
 | ------ | -------------------- | ---------------------------------------- | -------------------------------------------------------- |
-| **P0** | Foundation           | Stable model path & docs                 | ✅ Mostly done — maintain per MODEL_GUIDE                 |
-| **P1** | ML platform complete | Fully repeatable AI training & inference | Eval gates pass; local depth script; promoted checkpoint |
-| **P2** | MLOps & data         | Versioned datasets and models            | Registry + reproducible train run in CI                  |
-| **P3** | Backend platform     | Multi-user API + worker + DB             | Upload → async result persisted                          |
-| **P4** | Web product          | Surfer UI + surf score v1                | E2E demo on staging                                      |
-| **P5** | Production           | Secure deploy, monitor, scale            | Prod URL, SLAs, runbooks                                 |
+| **P0** | Foundation           | Stable model path & docs                 | ✅ **86%** — [#1–#5,#7](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP0+is%3Aclosed) closed; [#6](https://github.com/ShalevAtsis/SwellSight/issues/6) open |
+| **P1** | ML platform complete | Fully repeatable AI training & inference | ✅ **~94%** — [#8–#25](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP1+is%3Aclosed) closed (T03/T15 partial in doc) |
+| **P2** | MLOps & data         | Versioned datasets and models            | ✅ **86%** — [#26–#29,#31–#32](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP2+is%3Aclosed) closed; [#30](https://github.com/ShalevAtsis/SwellSight/issues/30) open |
+| **P3** | Backend platform     | Multi-user API + worker + DB             | ✅ **~87%** — [#33–#61](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP3+is%3Aclosed) except #36,#49,#61 |
+| **P4** | Web product          | Surfer UI + surf score v1                | ✅ **~79%** — core flows closed; [#64](https://github.com/ShalevAtsis/SwellSight/issues/64), [#70–#75](https://github.com/ShalevAtsis/SwellSight/issues/70) open/partial |
+| **P5** | Production           | Secure deploy, monitor, scale            | ⏳ **~8%** — [#79](https://github.com/ShalevAtsis/SwellSight/issues/79), [#81](https://github.com/ShalevAtsis/SwellSight/issues/81) partial; rest open |
 
 
 ---
@@ -314,66 +327,67 @@ flowchart LR
 
 ### Phase P0 — Foundation (maintenance)
 
-*Aligns with recent cleanup; keep in sync as you go.*
+*Aligns with recent cleanup; keep in sync as you go.* **6/7 done** — GitHub [#1–#5,#7](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP0+is%3Aclosed) closed.
 
-- P0-T01 Unify `WaveAnalysisModel` with inference analyzer (shared checkpoint)
-- P0-T02 Fix YAML `ConfigManager` + `_base`_ inheritance
-- P0-T03 Implement `scripts/inference.py` and wire `swellsight` CLI
-- P0-T04 Add [MODEL_GUIDE.md](MODEL_GUIDE.md)
-- P0-T05 `pip install -e .` verified on Windows + Linux (document in MODEL_GUIDE)
-- P0-T06 Fix remaining test collection failures (grep `sys.path` hacks)
-- P0-T07 Add GitHub Actions: lint + unit tests on PR
+- [x] **P0-T01** Unify `WaveAnalysisModel` with inference analyzer ([#1](https://github.com/ShalevAtsis/SwellSight/issues/1))
+- [x] **P0-T02** Fix YAML `ConfigManager` + `_base`_ inheritance ([#2](https://github.com/ShalevAtsis/SwellSight/issues/2))
+- [x] **P0-T03** Implement `scripts/inference.py` and wire `swellsight` CLI ([#3](https://github.com/ShalevAtsis/SwellSight/issues/3))
+- [x] **P0-T04** Add [MODEL_GUIDE.md](MODEL_GUIDE.md) ([#4](https://github.com/ShalevAtsis/SwellSight/issues/4))
+- [x] **P0-T05** `pip install -e .` documented — [RUN_LOCALLY.md](RUN_LOCALLY.md), [MODEL_GUIDE.md](MODEL_GUIDE.md) ([#5](https://github.com/ShalevAtsis/SwellSight/issues/5))
+- [ ] **P0-T06** Fix remaining test collection failures ([#6](https://github.com/ShalevAtsis/SwellSight/issues/6)) — *open*
+- [x] **P0-T07** GitHub Actions CI — `.github/workflows/ci.yml` ([#7](https://github.com/ShalevAtsis/SwellSight/issues/7))
 
 ---
 
 ### Phase P1 — ML platform (“fully AI” core)
 
-**Goal:** End-to-end ML without Colab; one command from raw images → trained checkpoint → inference metrics.
+**Goal:** End-to-end ML without Colab; one command from raw images → trained checkpoint → inference metrics.  
+**17/18 done** — GitHub [#8–#25](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP1+is%3Aclosed) closed.
 
 #### P1.A — Data & depth pipeline
 
 
-| ID     | Task                                  | Details                                                                |
-| ------ | ------------------------------------- | ---------------------------------------------------------------------- |
-| P1-T01 | Refactor `extract_depth_maps.py`      | Remove Colab/Drive paths; CLI: `--input`, `--output`, `--gpu`          |
-| P1-T02 | Standardize dataset layout            | Document + validate `data/raw`, `data/depth_maps`, `data/processed`    |
-| P1-T03 | Depth quality gate                    | Reuse `quality_validation` / `data_validator` in pipeline before train |
-| P1-T04 | Dataset manifest                      | `datasets/manifest.json` (paths, labels, split, version)               |
-| P1-T05 | Integrate real depth in `WaveDataset` | Load `_depth.npy` when present instead of zeros                        |
+| ID     | Status | Task                                  | Details                                                                |
+| ------ | ------ | ------------------------------------- | ---------------------------------------------------------------------- |
+| P1-T01 | ✅      | Refactor `extract_depth_maps.py`      | `scripts/extract_depth_maps.py` — local CLI ([#8](https://github.com/ShalevAtsis/SwellSight/issues/8)) |
+| P1-T02 | ✅      | Standardize dataset layout            | `data/layout.py`, `validate_data_layout.py` ([#9](https://github.com/ShalevAtsis/SwellSight/issues/9)) |
+| P1-T03 | ~      | Depth quality gate                    | `--min-quality` on extract; full train pipeline gate TBD ([#10](https://github.com/ShalevAtsis/SwellSight/issues/10)) |
+| P1-T04 | ✅      | Dataset manifest                      | `manifest.py`, `build_dataset_manifest.py` ([#11](https://github.com/ShalevAtsis/SwellSight/issues/11)) |
+| P1-T05 | ✅      | Integrate real depth in `WaveDataset` | `_depth.npy` loading ([#12](https://github.com/ShalevAtsis/SwellSight/issues/12)) |
 
 
 #### P1.B — Training excellence
 
 
-| ID     | Task                            | Details                                                    |
-| ------ | ------------------------------- | ---------------------------------------------------------- |
-| P1-T06 | Wire `MultiTaskLoss` in trainer | Replace inline MSE/CE; config loss weights                 |
-| P1-T07 | Wire LR scheduler               | `create_lr_scheduler` + warmup per config                  |
-| P1-T08 | Sim-to-real trainer mode        | Synthetic pretrain → real finetune phases in one CLI flag  |
-| P1-T09 | Training callbacks              | Early stopping, TensorBoard/W&B optional                   |
-| P1-T10 | Export best checkpoint          | Always write `checkpoints/best_model.pth` + `metrics.json` |
-| P1-T11 | Evaluation gate script          | Fail CI if MAE/accuracy below thresholds (configurable)    |
+| ID     | Status | Task                            | Details                                                    |
+| ------ | ------ | ------------------------------- | ---------------------------------------------------------- |
+| P1-T06 | ✅      | Wire `MultiTaskLoss` in trainer | `trainer.py` ([#13](https://github.com/ShalevAtsis/SwellSight/issues/13)) |
+| P1-T07 | ✅      | Wire LR scheduler               | `create_lr_scheduler` ([#14](https://github.com/ShalevAtsis/SwellSight/issues/14)) |
+| P1-T08 | ✅      | Sim-to-real trainer mode        | `--sim-to-real` on `train.py` ([#15](https://github.com/ShalevAtsis/SwellSight/issues/15)) |
+| P1-T09 | ✅      | Training callbacks              | Early stopping, TensorBoard ([#16](https://github.com/ShalevAtsis/SwellSight/issues/16)) |
+| P1-T10 | ✅      | Export best checkpoint          | `checkpoints/best_model.pth` ([#17](https://github.com/ShalevAtsis/SwellSight/issues/17)) |
+| P1-T11 | ✅      | Evaluation gate script          | `evaluation_gate.py` ([#18](https://github.com/ShalevAtsis/SwellSight/issues/18)) |
 
 
 #### P1.C — Inference hardening
 
 
-| ID     | Task                                      | Details                                         |
-| ------ | ----------------------------------------- | ----------------------------------------------- |
-| P1-T12 | Pipeline loads checkpoint from env/config | `SWELLSIGHT_CHECKPOINT` + inference.yaml        |
-| P1-T13 | Batch inference API internally            | Worker-ready function: list of images → results |
-| P1-T14 | Model warmup on worker start              | Avoid cold-start timeout on first user          |
-| P1-T15 | CPU/GPU fallback tests                    | Document limits in MODEL_GUIDE                  |
+| ID     | Status | Task                                      | Details                                         |
+| ------ | ------ | ----------------------------------------- | ----------------------------------------------- |
+| P1-T12 | ✅      | Pipeline loads checkpoint from env/config | `SWELLSIGHT_CHECKPOINT` ([#19](https://github.com/ShalevAtsis/SwellSight/issues/19)) |
+| P1-T13 | ✅      | Batch inference API internally            | `inference/batch.py` ([#20](https://github.com/ShalevAtsis/SwellSight/issues/20)) |
+| P1-T14 | ✅      | Model warmup on worker start              | `runner.warmup()` in worker ([#21](https://github.com/ShalevAtsis/SwellSight/issues/21)) |
+| P1-T15 | ~      | CPU/GPU fallback tests                    | `test_trainer_and_hardware.py`; expand docs ([#22](https://github.com/ShalevAtsis/SwellSight/issues/22)) |
 
 
 #### P1.D — Synthetic data (optional but “full pipeline”)
 
 
-| ID     | Task                                            | Details                                        |
-| ------ | ----------------------------------------------- | ---------------------------------------------- |
-| P1-T16 | Refactor `generate_synthetic_data.py` for local | HF token via env; no `google.colab`            |
-| P1-T17 | Synthetic job config                            | YAML: prompts, count, controlnet scale         |
-| P1-T18 | Auto-label from depth geometry                  | Tie into existing `synthetic_generator` labels |
+| ID     | Status | Task                                            | Details                                        |
+| ------ | ------ | ----------------------------------------------- | ---------------------------------------------- |
+| P1-T16 | ✅      | Refactor `generate_synthetic_data.py` for local | `scripts/generate_synthetic_data.py` ([#23](https://github.com/ShalevAtsis/SwellSight/issues/23)) |
+| P1-T17 | ✅      | Synthetic job config                            | `configs/synthetic.yaml` ([#24](https://github.com/ShalevAtsis/SwellSight/issues/24)) |
+| P1-T18 | ✅      | Auto-label from depth geometry                  | `synthetic_generator` labels ([#25](https://github.com/ShalevAtsis/SwellSight/issues/25)) |
 
 
 **P1 exit criteria:** Train on local data; evaluate; run `inference.py` with promoted checkpoint; depth maps generated locally; README metrics reproducible or honestly labeled “reference run”.
@@ -382,18 +396,19 @@ flowchart LR
 
 ### Phase P2 — MLOps & model registry
 
-**Goal:** Know *which* model is in staging/prod; reproduce training.
+**Goal:** Know *which* model is in staging/prod; reproduce training.  
+**6/7 done** — [#26–#29,#31–#32](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP2+is%3Aclosed) closed; [#30](https://github.com/ShalevAtsis/SwellSight/issues/30) open.
 
 
-| ID     | Task                                 | Details                                           |
-| ------ | ------------------------------------ | ------------------------------------------------- |
-| P2-T01 | Define `models/registry.yaml`        | version, path, metrics, data_manifest_id, git_sha |
-| P2-T02 | Script `promote_model.py`            | Copy checkpoint + update registry                 |
-| P2-T03 | Pin dependency versions              | `requirements/*.txt` lock for training/inference  |
-| P2-T04 | MLflow or simple JSON experiment log | Params, metrics, artifact path                    |
-| P2-T05 | Dataset versioning                   | DVC or manifest hash in registry                  |
-| P2-T06 | Automated train smoke in CI          | Dummy data, 1 epoch, on GPU runner optional       |
-| P2-T07 | Model card per version               | `docs/models/vX.md` — limits, metrics, bias notes |
+| ID     | Status | Task                                 | Details                                           |
+| ------ | ------ | ------------------------------------ | ------------------------------------------------- |
+| P2-T01 | ✅      | Define `models/registry.yaml`        | `models/registry.yaml` ([#26](https://github.com/ShalevAtsis/SwellSight/issues/26)) |
+| P2-T02 | ✅      | Script `promote_model.py`            | `scripts/promote_model.py` ([#27](https://github.com/ShalevAtsis/SwellSight/issues/27)) |
+| P2-T03 | ✅      | Pin dependency versions              | `requirements-lock.txt` ([#28](https://github.com/ShalevAtsis/SwellSight/issues/28)) |
+| P2-T04 | ✅      | MLflow or simple JSON experiment log | `mlops/experiment.py` ([#29](https://github.com/ShalevAtsis/SwellSight/issues/29)) |
+| P2-T05 | ⏳      | Dataset versioning                   | DVC / manifest hash — not implemented ([#30](https://github.com/ShalevAtsis/SwellSight/issues/30)) |
+| P2-T06 | ✅      | Automated train smoke in CI          | `.github/workflows/train-smoke.yml` ([#31](https://github.com/ShalevAtsis/SwellSight/issues/31)) |
+| P2-T07 | ✅      | Model card per version               | `docs/models/wave-v0.1.0.md` ([#32](https://github.com/ShalevAtsis/SwellSight/issues/32)) |
 
 
 **P2 exit criteria:** Registry points to production candidate; training reproducible from manifest + config hash.
@@ -402,70 +417,71 @@ flowchart LR
 
 ### Phase P3 — Backend platform (server)
 
-**Goal:** Authenticated users; upload photo; async analysis; persisted results.
+**Goal:** Authenticated users; upload photo; async analysis; persisted results.  
+**26/29 done** — [#33–#60](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP3+is%3Aclosed) closed except [#36](https://github.com/ShalevAtsis/SwellSight/issues/36), [#49](https://github.com/ShalevAtsis/SwellSight/issues/49), [#61](https://github.com/ShalevAtsis/SwellSight/issues/61) (backlog).
 
 #### P3.A — Database & domain model
 
 
-| ID     | Task                                     | Details                                                    |
-| ------ | ---------------------------------------- | ---------------------------------------------------------- |
-| P3-T01 | Choose ORM: **SQLAlchemy 2.0** + Alembic | Migrations from day one                                    |
-| P3-T02 | Schema: `users`                          | id, email, password_hash, created_at                       |
-| P3-T03 | Schema: `analyses`                       | user_id, status, image_url, result_json, score, timestamps |
-| P3-T04 | Schema: `spots` (optional v1)            | name, lat/lon — for future spot-based cams                 |
-| P3-T05 | Schema: `model_versions`                 | registry sync for audit                                    |
-| P3-T06 | Seed + migration scripts                 | `alembic upgrade head`                                     |
+| ID     | Status | Task                                     | Details                                                    |
+| ------ | ------ | ---------------------------------------- | ---------------------------------------------------------- |
+| P3-T01 | ✅      | Choose ORM: **SQLAlchemy 2.0** + Alembic | `db/`, `alembic/` ([#33](https://github.com/ShalevAtsis/SwellSight/issues/33)) |
+| P3-T02 | ✅      | Schema: `users`                          | `db/models.py` ([#34](https://github.com/ShalevAtsis/SwellSight/issues/34)) |
+| P3-T03 | ✅      | Schema: `analyses`                       | status, storage_key, scores ([#35](https://github.com/ShalevAtsis/SwellSight/issues/35)) |
+| P3-T04 | ⏳      | Schema: `spots` (optional v1)            | Not implemented ([#36](https://github.com/ShalevAtsis/SwellSight/issues/36)) |
+| P3-T05 | ✅      | Schema: `model_versions`                 | `ModelVersionRecord` ([#37](https://github.com/ShalevAtsis/SwellSight/issues/37)) |
+| P3-T06 | ✅      | Seed + migration scripts                 | `001_initial_schema.py` ([#38](https://github.com/ShalevAtsis/SwellSight/issues/38)) |
 
 
 #### P3.B — Auth & security
 
 
-| ID     | Task                                 | Details                          |
-| ------ | ------------------------------------ | -------------------------------- |
-| P3-T07 | Register / login / refresh endpoints | bcrypt or argon2 passwords       |
-| P3-T08 | JWT middleware on protected routes   |                                  |
-| P3-T09 | Rate limiting per user/IP            | Redis sliding window             |
-| P3-T10 | Upload validation                    | Max size, MIME, image dimensions |
-| P3-T11 | CORS config for web origin           | Staging + prod URLs              |
+| ID     | Status | Task                                 | Details                          |
+| ------ | ------ | ------------------------------------ | -------------------------------- |
+| P3-T07 | ~      | Register / login / refresh endpoints | Login+register+JWT; refresh TBD ([#39](https://github.com/ShalevAtsis/SwellSight/issues/39)) |
+| P3-T08 | ✅      | JWT middleware on protected routes   | `api/v1/deps.py` ([#40](https://github.com/ShalevAtsis/SwellSight/issues/40)) |
+| P3-T09 | ✅      | Rate limiting per user/IP            | `RateLimitMiddleware` ([#41](https://github.com/ShalevAtsis/SwellSight/issues/41)) |
+| P3-T10 | ✅      | Upload validation                    | `api/validation.py` ([#42](https://github.com/ShalevAtsis/SwellSight/issues/42)) |
+| P3-T11 | ✅      | CORS config for web origin           | `platform/settings.py` ([#43](https://github.com/ShalevAtsis/SwellSight/issues/43)) |
 
 
 #### P3.C — API design
 
 
-| ID     | Task                             | Details                                      |
-| ------ | -------------------------------- | -------------------------------------------- |
-| P3-T12 | `POST /v1/analyses`              | multipart upload → job_id                    |
-| P3-T13 | `GET /v1/analyses/{id}`          | status + result when complete                |
-| P3-T14 | `GET /v1/analyses`               | user history paginated                       |
-| P3-T15 | `GET /v1/health`                 | API + DB + queue depth                       |
-| P3-T16 | OpenAPI published                | Generate TS client for frontend              |
-| P3-T17 | Refactor existing `endpoints.py` | Remove fragile frame inspection for pipeline |
-| P3-T18 | Idempotency key on upload        | Optional duplicate prevention                |
+| ID     | Status | Task                             | Details                                      |
+| ------ | ------ | -------------------------------- | -------------------------------------------- |
+| P3-T12 | ✅      | `POST /v1/analyses`              | 202 + queue ([#44](https://github.com/ShalevAtsis/SwellSight/issues/44)) |
+| P3-T13 | ✅      | `GET /v1/analyses/{id}`          | Poll results ([#45](https://github.com/ShalevAtsis/SwellSight/issues/45)) |
+| P3-T14 | ✅      | `GET /v1/analyses`               | History list ([#46](https://github.com/ShalevAtsis/SwellSight/issues/46)) |
+| P3-T15 | ✅      | `GET /v1/health`                 | DB + Redis + queue ([#47](https://github.com/ShalevAtsis/SwellSight/issues/47)) |
+| P3-T16 | ✅      | OpenAPI published                | `/docs` + `web/src/lib/api.ts` ([#48](https://github.com/ShalevAtsis/SwellSight/issues/48)) |
+| P3-T17 | ⏳      | Refactor existing `endpoints.py` | Legacy sync routes remain ([#49](https://github.com/ShalevAtsis/SwellSight/issues/49)) |
+| P3-T18 | ✅      | Idempotency key on upload        | `Idempotency-Key` header ([#50](https://github.com/ShalevAtsis/SwellSight/issues/50)) |
 
 
 #### P3.D — Worker & queue
 
 
-| ID     | Task                                     | Details                                   |
-| ------ | ---------------------------------------- | ----------------------------------------- |
-| P3-T19 | Redis queue module                       | `swellsight/jobs/` package                |
-| P3-T20 | Worker entrypoint `scripts/worker.py`    | Loop: dequeue → pipeline → save           |
-| P3-T21 | Job states                               | pending → processing → completed / failed |
-| P3-T22 | Retry + dead letter                      | 3 retries; log failure reason             |
-| P3-T23 | Store artifacts to object storage        | Pre-signed URLs for client download       |
-| P3-T24 | Wire `ModelServer` / checkpoint from env | Production model version                  |
+| ID     | Status | Task                                     | Details                                   |
+| ------ | ------ | ---------------------------------------- | ----------------------------------------- |
+| P3-T19 | ✅      | Redis queue module                       | `jobs/queue.py` ([#51](https://github.com/ShalevAtsis/SwellSight/issues/51)) |
+| P3-T20 | ✅      | Worker entrypoint `scripts/worker.py`    | Graceful shutdown ([#52](https://github.com/ShalevAtsis/SwellSight/issues/52)) |
+| P3-T21 | ✅      | Job states                               | pending → processing → completed / failed ([#53](https://github.com/ShalevAtsis/SwellSight/issues/53)) |
+| P3-T22 | ✅      | Retry + dead letter                      | BRPOPLPUSH + DLQ ([#54](https://github.com/ShalevAtsis/SwellSight/issues/54)) |
+| P3-T23 | ~      | Store artifacts to object storage        | Local + S3 backend; no pre-signed URLs ([#55](https://github.com/ShalevAtsis/SwellSight/issues/55)) |
+| P3-T24 | ✅      | Wire `ModelServer` / checkpoint from env | `SWELLSIGHT_CHECKPOINT`, skip flag ([#56](https://github.com/ShalevAtsis/SwellSight/issues/56)) |
 
 
 #### P3.E — Surf Score Engine (v1)
 
 
-| ID     | Task                              | Details                                                         |
-| ------ | --------------------------------- | --------------------------------------------------------------- |
-| P3-T25 | Define score spec                 | 0–100; inputs: height, direction, breaking, confidence, quality |
-| P3-T26 | Implement `SurfScoreEngine`       | `src/swellsight/scoring/` — weighted formula + caps             |
-| P3-T27 | Unit tests for score monotonicity | e.g. higher clean swell → not lower score                       |
-| P3-T28 | Expose score in API response      | `surf_score`, `score_breakdown`                                 |
-| P3-T29 | (v2 backlog) Learned score        | Train regressor on user ratings                                 |
+| ID     | Status | Task                              | Details                                                         |
+| ------ | ------ | --------------------------------- | --------------------------------------------------------------- |
+| P3-T25 | ✅      | Define score spec                 | 0–100 documented ([#57](https://github.com/ShalevAtsis/SwellSight/issues/57)) |
+| P3-T26 | ✅      | Implement `SurfScoreEngine`       | `scoring/engine.py` ([#58](https://github.com/ShalevAtsis/SwellSight/issues/58)) |
+| P3-T27 | ✅      | Unit tests for score monotonicity | `tests/unit/test_surf_score.py` ([#59](https://github.com/ShalevAtsis/SwellSight/issues/59)) |
+| P3-T28 | ✅      | Expose score in API response      | `surf_score`, `score_breakdown` ([#60](https://github.com/ShalevAtsis/SwellSight/issues/60)) |
+| P3-T29 | 📋      | (v2 backlog) Learned score        | Not started ([#61](https://github.com/ShalevAtsis/SwellSight/issues/61)) |
 
 
 **P3 exit criteria:** Postman/curl: login → upload → poll → get metrics + surf score; data in Postgres; worker runs without blocking API.
@@ -474,41 +490,42 @@ flowchart LR
 
 ### Phase P4 — Web application (client)
 
-**Goal:** Friendly UI for surfers; mobile-first.
+**Goal:** Friendly UI for surfers; mobile-first.  
+**11/14 done** — [#62–#72](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP4+is%3Aclosed) closed; [#70–#75](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP4+is%3Aopen) open/partial.
 
 #### P4.A — App shell
 
 
-| ID     | Task                                    | Details                                                |
-| ------ | --------------------------------------- | ------------------------------------------------------ |
-| P4-T01 | Create `web/` monorepo or separate repo | Next.js + TypeScript                                   |
-| P4-T02 | Design system                           | Colors, typography, surf brand; Figma or inline tokens |
-| P4-T03 | Auth pages                              | Login, register, forgot password                       |
-| P4-T04 | API client from OpenAPI                 | Generated hooks or fetch wrapper                       |
+| ID     | Status | Task                                    | Details                                                |
+| ------ | ------ | --------------------------------------- | ------------------------------------------------------ |
+| P4-T01 | ✅      | Create `web/` monorepo or separate repo | Next.js 14 `web/` ([#62](https://github.com/ShalevAtsis/SwellSight/issues/62)) |
+| P4-T02 | ✅      | Design system                           | Tailwind ocean/swell tokens ([#63](https://github.com/ShalevAtsis/SwellSight/issues/63)) |
+| P4-T03 | ~      | Auth pages                              | Login + register; forgot password TBD ([#64](https://github.com/ShalevAtsis/SwellSight/issues/64)) |
+| P4-T04 | ✅      | API client from OpenAPI                 | `web/src/lib/api.ts` ([#65](https://github.com/ShalevAtsis/SwellSight/issues/65)) |
 
 
 #### P4.B — Core flows
 
 
-| ID     | Task         | Details                                           |
-| ------ | ------------ | ------------------------------------------------- |
-| P4-T05 | Landing page | Value prop + CTA                                  |
-| P4-T06 | Upload flow  | Drag-drop, camera capture on mobile               |
-| P4-T07 | Progress UI  | Poll or WebSocket while analyzing                 |
-| P4-T08 | Results page | Height, direction, breaking, **surf score** gauge |
-| P4-T09 | History list | Past analyses with thumbnails                     |
-| P4-T10 | Error states | Low quality image, timeout, model warning         |
+| ID     | Status | Task         | Details                                           |
+| ------ | ------ | ------------ | ------------------------------------------------- |
+| P4-T05 | ✅      | Landing page | `/` ([#66](https://github.com/ShalevAtsis/SwellSight/issues/66)) |
+| P4-T06 | ✅      | Upload flow  | `UploadZone` + camera capture ([#67](https://github.com/ShalevAtsis/SwellSight/issues/67)) |
+| P4-T07 | ✅      | Progress UI  | `useAnalysisPoll` 2s ([#68](https://github.com/ShalevAtsis/SwellSight/issues/68)) |
+| P4-T08 | ✅      | Results page | Gauge + metrics + breakdown ([#69](https://github.com/ShalevAtsis/SwellSight/issues/69)) |
+| P4-T09 | ~      | History list | List without thumbnails ([#70](https://github.com/ShalevAtsis/SwellSight/issues/70)) |
+| P4-T10 | ~      | Error states | `ErrorAlert`, 429/400 messages ([#71](https://github.com/ShalevAtsis/SwellSight/issues/71)) |
 
 
 #### P4.C — UX polish
 
 
-| ID     | Task                    | Details                               |
-| ------ | ----------------------- | ------------------------------------- |
-| P4-T11 | Explain score breakdown | Tooltips: what affects score          |
-| P4-T12 | Share result (optional) | Link or image export                  |
-| P4-T13 | i18n backlog            | English first; Hebrew if needed later |
-| P4-T14 | Accessibility           | WCAG basics, keyboard nav             |
+| ID     | Status | Task                    | Details                               |
+| ------ | ------ | ----------------------- | ------------------------------------- |
+| P4-T11 | ✅      | Explain score breakdown | `ScoreBreakdownPanel` hints ([#72](https://github.com/ShalevAtsis/SwellSight/issues/72)) |
+| P4-T12 | ⏳      | Share result (optional) | Not implemented ([#73](https://github.com/ShalevAtsis/SwellSight/issues/73)) |
+| P4-T13 | 📋      | i18n backlog            | English only ([#74](https://github.com/ShalevAtsis/SwellSight/issues/74)) |
+| P4-T14 | ⏳      | Accessibility           | Basic keyboard on upload; audit TBD ([#75](https://github.com/ShalevAtsis/SwellSight/issues/75)) |
 
 
 **P4 exit criteria:** Staging URL: full journey without CLI; Lighthouse mobile acceptable.
@@ -517,65 +534,66 @@ flowchart LR
 
 ### Phase P5 — Production deployment
 
-**Goal:** Secure, observable, recoverable production.
+**Goal:** Secure, observable, recoverable production.  
+**1/24 done, 1 partial** — [#79](https://github.com/ShalevAtsis/SwellSight/issues/79) closed; [#81](https://github.com/ShalevAtsis/SwellSight/issues/81) partial; [#76–#99](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP5+is%3Aopen) open.
 
 #### P5.A — Containers & environments
 
 
-| ID     | Task                 | Details                                 |
-| ------ | -------------------- | --------------------------------------- |
-| P5-T01 | `Dockerfile.api`     | Slim Python, no GPU                     |
-| P5-T02 | `Dockerfile.worker`  | CUDA base + model cache volume          |
-| P5-T03 | `docker-compose.yml` | api + worker + postgres + redis + minio |
-| P5-T04 | Env config           | `.env.example`; secrets via platform    |
-| P5-T05 | Staging environment  | Parity with prod, smaller GPU           |
+| ID     | Status | Task                 | Details                                 |
+| ------ | ------ | -------------------- | --------------------------------------- |
+| P5-T01 | ⏳      | `Dockerfile.api`     | Shared `Dockerfile` only ([#76](https://github.com/ShalevAtsis/SwellSight/issues/76)) |
+| P5-T02 | ⏳      | `Dockerfile.worker`  | Same ([#77](https://github.com/ShalevAtsis/SwellSight/issues/77)) |
+| P5-T03 | ~      | `docker-compose.yml` | `deploy/docker-compose.platform.yml` (no MinIO) ([#78](https://github.com/ShalevAtsis/SwellSight/issues/78)) |
+| P5-T04 | ✅      | Env config           | `.env.example`, [RUN_LOCALLY.md](RUN_LOCALLY.md) ([#79](https://github.com/ShalevAtsis/SwellSight/issues/79)) |
+| P5-T05 | ⏳      | Staging environment  | Not deployed ([#80](https://github.com/ShalevAtsis/SwellSight/issues/80)) |
 
 
 #### P5.B — CI/CD
 
 
-| ID     | Task                             | Details            |
-| ------ | -------------------------------- | ------------------ |
-| P5-T06 | CI: test + lint on PR            |                    |
-| P5-T07 | CI: build images on main         | Tag `sha` + semver |
-| P5-T08 | CD: deploy staging auto          |                    |
-| P5-T09 | CD: deploy prod manual approve   |                    |
-| P5-T10 | DB migrations in deploy pipeline | Alembic job        |
+| ID     | Status | Task                             | Details            |
+| ------ | ------ | -------------------------------- | ------------------ |
+| P5-T06 | ~      | CI: test + lint on PR            | `ci.yml` ([#81](https://github.com/ShalevAtsis/SwellSight/issues/81)) |
+| P5-T07 | ⏳      | CI: build images on main         | ([#82](https://github.com/ShalevAtsis/SwellSight/issues/82)) |
+| P5-T08 | ⏳      | CD: deploy staging auto          | ([#83](https://github.com/ShalevAtsis/SwellSight/issues/83)) |
+| P5-T09 | ⏳      | CD: deploy prod manual approve   | ([#84](https://github.com/ShalevAtsis/SwellSight/issues/84)) |
+| P5-T10 | ⏳      | DB migrations in deploy pipeline | ([#85](https://github.com/ShalevAtsis/SwellSight/issues/85)) |
 
 
 #### P5.C — Security & compliance
 
 
-| ID     | Task                   | Details                   |
-| ------ | ---------------------- | ------------------------- |
-| P5-T11 | TLS everywhere         | LB terminates HTTPS       |
-| P5-T12 | Secrets rotation doc   | HF token, DB, JWT secret  |
-| P5-T13 | Image retention policy | Delete raw after N days   |
-| P5-T14 | Privacy policy & ToS   | User uploads beach photos |
-| P5-T15 | Dependency scanning    | Dependabot / Snyk         |
+| ID     | Status | Task                   | Details                   |
+| ------ | ------ | ---------------------- | ------------------------- |
+| P5-T11 | ⏳      | TLS everywhere         | ([#86](https://github.com/ShalevAtsis/SwellSight/issues/86)) |
+| P5-T12 | ⏳      | Secrets rotation doc   | ([#87](https://github.com/ShalevAtsis/SwellSight/issues/87)) |
+| P5-T13 | ⏳      | Image retention policy | ([#88](https://github.com/ShalevAtsis/SwellSight/issues/88)) |
+| P5-T14 | ⏳      | Privacy policy & ToS   | ([#89](https://github.com/ShalevAtsis/SwellSight/issues/89)) |
+| P5-T15 | ⏳      | Dependency scanning    | ([#90](https://github.com/ShalevAtsis/SwellSight/issues/90)) |
 
 
 #### P5.D — Observability & ops
 
 
-| ID     | Task               | Details                                                 |
-| ------ | ------------------ | ------------------------------------------------------- |
-| P5-T16 | Structured logging | JSON logs, correlation id per job                       |
-| P5-T17 | Metrics            | Prometheus: latency, queue depth, GPU util              |
-| P5-T18 | Dashboards         | Grafana — API + worker                                  |
-| P5-T19 | Alerts             | Failed jobs, queue backlog, error rate                  |
-| P5-T20 | Runbooks           | `docs/ops/RUNBOOK.md` — deploy, rollback, model promote |
+| ID     | Status | Task               | Details                                                 |
+| ------ | ------ | ------------------ | ------------------------------------------------------- |
+| P5-T16 | ⏳      | Structured logging | ([#91](https://github.com/ShalevAtsis/SwellSight/issues/91)) |
+| P5-T17 | ⏳      | Metrics            | ([#92](https://github.com/ShalevAtsis/SwellSight/issues/92)) |
+| P5-T18 | ⏳      | Dashboards         | ([#93](https://github.com/ShalevAtsis/SwellSight/issues/93)) |
+| P5-T19 | ⏳      | Alerts             | ([#94](https://github.com/ShalevAtsis/SwellSight/issues/94)) |
+| P5-T20 | ~      | Runbooks           | [PLATFORM.md](ops/PLATFORM.md); full RUNBOOK TBD ([#95](https://github.com/ShalevAtsis/SwellSight/issues/95)) |
 
 
 #### P5.E — Scale & cost (post-launch)
 
 
-| ID     | Task                    | Details                |
-| ------ | ----------------------- | ---------------------- |
-| P5-T21 | Horizontal API replicas | Stateless              |
-| P5-T22 | Multiple GPU workers    | Queue consumers        |
-| P5-T23 | CDN for static web      |                        |
-| P5-T24 | Cost monitoring         | GPU hours per analysis |
+| ID     | Status | Task                    | Details                |
+| ------ | ------ | ----------------------- | ---------------------- |
+| P5-T21 | ⏳      | Horizontal API replicas | ([#96](https://github.com/ShalevAtsis/SwellSight/issues/96)) |
+| P5-T22 | ⏳      | Multiple GPU workers    | ([#97](https://github.com/ShalevAtsis/SwellSight/issues/97)) |
+| P5-T23 | ⏳      | CDN for static web      | ([#98](https://github.com/ShalevAtsis/SwellSight/issues/98)) |
+| P5-T24 | ⏳      | Cost monitoring         | ([#99](https://github.com/ShalevAtsis/SwellSight/issues/99)) |
 
 
 **P5 exit criteria:** Production URL live; on-call runbook; rollback tested; model promote path documented.
@@ -716,15 +734,17 @@ Rough calendar for a **3-person ML team** (adjust parallelism):
 
 Issues are live on **[ShalevAtsis/SwellSight](https://github.com/ShalevAtsis/SwellSight/issues)**:
 
-| Item | Link |
-|------|------|
-| **Epic** | [#100 — SwellSight product roadmap P0→P5](https://github.com/ShalevAtsis/SwellSight/issues/100) |
-| **P0** (Foundation) | Issues [#1–#7](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP0) — #1–#4 closed |
-| **P1** (ML platform) | [#8–#25](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP1) |
-| **P2** (MLOps) | [#26–#32](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP2) |
-| **P3** (Backend) | [#33–#61](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP3) |
-| **P4** (Web UI) | [#62–#75](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP4) |
-| **P5** (Production) | [#76–#99](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP5) |
+| Item | Closed | Open / backlog |
+|------|--------|----------------|
+| **Epic** | — | [#100 — P0→P5 roadmap](https://github.com/ShalevAtsis/SwellSight/issues/100) |
+| **P0** | [#1–#5,#7](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP0+is%3Aclosed) | [#6](https://github.com/ShalevAtsis/SwellSight/issues/6) |
+| **P1** | [#8–#25](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP1+is%3Aclosed) | — |
+| **P2** | [#26–#29,#31–#32](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP2+is%3Aclosed) | [#30](https://github.com/ShalevAtsis/SwellSight/issues/30) |
+| **P3** | [#33–#35,#37–#48,#50–#60](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP3+is%3Aclosed) | [#36](https://github.com/ShalevAtsis/SwellSight/issues/36), [#49](https://github.com/ShalevAtsis/SwellSight/issues/49), [#61](https://github.com/ShalevAtsis/SwellSight/issues/61) backlog |
+| **P4** | [#62–#63,#65–#69,#72](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP4+is%3Aclosed) | [#64](https://github.com/ShalevAtsis/SwellSight/issues/64), [#70](https://github.com/ShalevAtsis/SwellSight/issues/70)–[#71](https://github.com/ShalevAtsis/SwellSight/issues/71), [#73](https://github.com/ShalevAtsis/SwellSight/issues/73)–[#75](https://github.com/ShalevAtsis/SwellSight/issues/75) |
+| **P5** | [#79](https://github.com/ShalevAtsis/SwellSight/issues/79) | [#76–#78,#80–#99](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP5+is%3Aopen) |
+
+**Legend:** ✅ done · ~ partial · ⏳ not started · 📋 v2 backlog
 
 Title format: `[P1-T01] Short description`. Milestones: `P0: Foundation` … `P5: Production`.
 
@@ -734,12 +754,13 @@ Re-create issues (if needed): `python scripts/create_roadmap_issues.py`
 
 ## Next action (immediate)
 
-1. Resolve any remaining **open questions** (Section 11) — defaults filled where decided.
-2. Start **[#8 — P1-T01](https://github.com/ShalevAtsis/SwellSight/issues/8)** (local depth extraction).
-3. Finish open P0 issues [#5–#7](https://github.com/ShalevAtsis/SwellSight/issues?q=label%3Aphase%3AP0+is%3Aopen) before or in parallel with P1.
+1. **Run locally:** [RUN_LOCALLY.md](RUN_LOCALLY.md) — web + API + worker smoke test.
+2. **P0:** Close the loop on [#6 — test collection](https://github.com/ShalevAtsis/SwellSight/issues/6).
+3. **P4 polish:** [#70](https://github.com/ShalevAtsis/SwellSight/issues/70) thumbnails, [#64](https://github.com/ShalevAtsis/SwellSight/issues/64) forgot-password, [#73–#75](https://github.com/ShalevAtsis/SwellSight/issues/73).
+4. **P5:** Start [#76–#78](https://github.com/ShalevAtsis/SwellSight/issues/76) split Dockerfiles + full compose; extend [#81](https://github.com/ShalevAtsis/SwellSight/issues/81) CI.
 
-**Work order:** P0 → P1 → P2 → P3 → P4 → P5 (do not skip P1 if surf score must be trustworthy).
+**Work order:** P0 test debt → P4 polish + staging demo → **P5 production**.
 
 ---
 
-*Document version: 1.0 — 2026-05-20*
+*Document version: 1.1 — 2026-05-21 (progress sync)*

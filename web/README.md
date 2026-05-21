@@ -4,22 +4,16 @@ Next.js 14 surf analysis UI — mobile-first, talks to the platform API (`/api/v
 
 ## Setup
 
+**Full stack (API, Docker, worker, web):** see [docs/RUN_LOCALLY.md](../docs/RUN_LOCALLY.md).
+
 ```bash
 cd web
-cp .env.local.example .env.local
+cp .env.local.example .env.local   # Windows: Copy-Item .env.local.example .env.local
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Ensure the API is running with CORS allowing the web origin:
-
-```bash
-# from repo root
-export SWELLSIGHT_SKIP_MODEL_SERVER=1
-export CORS_ORIGINS=http://localhost:3000
-uvicorn swellsight.api.server:app --reload --port 8000
-python scripts/worker.py
-```
+Open [http://localhost:3000](http://localhost:3000). The API and worker must be running — see RUN_LOCALLY.md for PowerShell commands (`$env:...` and `python -m uvicorn`).
 
 ## Routes
 

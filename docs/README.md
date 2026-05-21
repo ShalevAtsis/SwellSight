@@ -6,6 +6,10 @@ Welcome to the SwellSight documentation! This directory contains comprehensive g
 
 ### Getting Started
 
+- **[Run Locally (A–Z)](RUN_LOCALLY.md)** ⭐ **START HERE — web + API + worker + Docker**
+  - Windows PowerShell and macOS/Linux
+  - Postgres, Redis, migrations, four terminals, smoke test
+
 - **[Training from Scratch Guide](TRAINING_FROM_SCRATCH.md)** ⭐ **START HERE IF NO MODEL**
   - Complete training pipeline (2-3 days)
   - Data collection and preprocessing

@@ -10,6 +10,8 @@
 
 ⚠️ **IMPORTANT**: Haven't trained the model yet? → **[START HERE](docs/START_HERE.md)** ⭐
 
+🚀 **Run the full app locally** (web + API + worker): → **[RUN LOCALLY (A–Z)](docs/RUN_LOCALLY.md)**
+
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org)
 [![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-orange.svg)](https://jupyter.org)
