@@ -1,15 +1,15 @@
 # Pinned core versions for reproducible installs (P2-T03)
 # Regenerate: pip freeze > requirements/requirements-lock.txt
 
-torch==2.2.0
-torchvision==0.17.0
+torch==2.8.0
+torchvision==0.23.0
 transformers==4.38.0
 numpy==1.26.4
-opencv-python==4.9.0.80
-pyyaml==6.0.1
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-sqlalchemy==2.0.25
-alembic==1.13.1
+opencv-python==4.13.0.92
+pyyaml==6.0.3
+fastapi==0.128.8
+uvicorn[standard]==0.39.0
+sqlalchemy==2.0.49
+alembic==1.16.5
 redis==5.0.1
 pytest==7.4.4
