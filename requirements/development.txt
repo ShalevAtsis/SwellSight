@@ -40,7 +40,7 @@ types-requests>=2.31.0
 types-Pillow>=10.0.0
 
 # Linting and formatting
-pylint>=2.17.0
+pylint>=3.3.9
 autopep8>=2.0.0
 bandit>=1.7.0
 
