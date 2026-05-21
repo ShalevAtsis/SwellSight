@@ -1,0 +1,61 @@
+# Platform stack: API + worker + Postgres + Redis
+# Usage: docker compose -f deploy/docker-compose.platform.yml up
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: swellsight
+      POSTGRES_PASSWORD: swellsight
+      POSTGRES_DB: swellsight
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: inference
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-secret-change-in-prod
+      PYTHONPATH: /app/src
+    depends_on:
+      - postgres
+      - redis
+    command: uvicorn swellsight.api.server:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: training
+    environment:
+      DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
+      REDIS_URL: redis://redis:6379/0
+      SWELLSIGHT_CHECKPOINT: /app/checkpoints/best_model.pth
+      PYTHONPATH: /app/src
+    depends_on:
+      - postgres
+      - redis
+    command: python scripts/worker.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  pgdata:

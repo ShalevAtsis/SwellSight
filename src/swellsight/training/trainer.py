@@ -12,6 +12,7 @@ from tqdm import tqdm
 from swellsight.models.losses import MultiTaskLoss
 from swellsight.models.wave_model import WaveAnalysisModel
 from swellsight.training.scheduler import create_lr_scheduler
+from swellsight.training.callbacks import TrainingCallbacks, build_default_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,12 @@ logger = logging.getLogger(__name__)
 class WaveAnalysisTrainer:
     """Trainer for the SwellSight wave analysis model."""
 
-    def __init__(self, config: Union[Dict[str, Any], Any]):
+    def __init__(
+        self,
+        config: Union[Dict[str, Any], Any],
+        log_dir: Optional[str] = None,
+        callbacks: Optional[TrainingCallbacks] = None,
+    ):
         self.config = config
         self._read_config(config)
 
@@ -58,6 +64,11 @@ class WaveAnalysisTrainer:
         )
 
         self.best_metrics: Dict[str, float] = {}
+        self.pretrain_epochs = getattr(self, "pretrain_epochs", 50)
+        self.finetune_epochs = getattr(self, "finetune_epochs", 20)
+        self.finetune_learning_rate = getattr(self, "finetune_learning_rate", self.learning_rate * 0.1)
+
+        self.callbacks = callbacks or build_default_callbacks(log_dir or str(self.save_dir.parent / "logs"))
 
         logger.info(
             "Trainer ready: device=%s trainable=%s lr=%s",
@@ -87,6 +98,9 @@ class WaveAnalysisTrainer:
                 "direction": train_conf.direction_loss_weight,
                 "breaking_type": train_conf.breaking_loss_weight,
             }
+            self.pretrain_epochs = train_conf.pretrain_epochs
+            self.finetune_epochs = train_conf.finetune_epochs
+            self.finetune_learning_rate = self.learning_rate * 0.1
             checkpoints = getattr(config, "paths", None)
             self.save_dir = (
                 Path(checkpoints.checkpoints_dir)
@@ -125,12 +139,15 @@ class WaveAnalysisTrainer:
 
         for epoch in range(num_epochs):
             logger.info("Epoch %s/%s", epoch + 1, num_epochs)
+            self.callbacks.on_epoch_start(epoch, {"phase": "train"})
 
             train_metrics = self._run_epoch(train_loader, is_training=True)
             self._log_metrics(train_metrics, "Train")
+            self.callbacks.on_epoch_end(epoch, {**train_metrics, "prefix": "train"})
 
             val_metrics = self._run_epoch(val_loader, is_training=False)
             self._log_metrics(val_metrics, "Val")
+            self.callbacks.on_epoch_end(epoch, {**val_metrics, "prefix": "val"})
 
             if self.scheduler is not None and not isinstance(
                 self.scheduler, optim.lr_scheduler.ReduceLROnPlateau
@@ -156,6 +173,44 @@ class WaveAnalysisTrainer:
                 break
 
         logger.info("Training done. Best val loss: %.4f", best_val_loss)
+
+    def train_sim_to_real(
+        self,
+        synthetic_train_loader,
+        synthetic_val_loader,
+        real_train_loader,
+        real_val_loader,
+        pretrain_epochs: Optional[int] = None,
+        finetune_epochs: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Phase 1: synthetic pretrain. Phase 2: real finetune (lower LR)."""
+        pretrain_epochs = pretrain_epochs or self.pretrain_epochs
+        finetune_epochs = finetune_epochs or self.finetune_epochs
+
+        logger.info("=== Sim-to-real Phase 1: synthetic pretrain (%s epochs) ===", pretrain_epochs)
+        self.train(synthetic_train_loader, synthetic_val_loader, num_epochs=pretrain_epochs)
+        pretrain_path = self.save_dir / "pretrain_best.pth"
+        if (self.save_dir / "best_model.pth").exists():
+            import shutil
+            shutil.copy(self.save_dir / "best_model.pth", pretrain_path)
+
+        logger.info("=== Sim-to-real Phase 2: real finetune (%s epochs) ===", finetune_epochs)
+        self._set_learning_rate(self.finetune_learning_rate)
+        self.train(real_train_loader, real_val_loader, num_epochs=finetune_epochs)
+
+        return {
+            "pretrain_epochs": pretrain_epochs,
+            "finetune_epochs": finetune_epochs,
+            "pretrain_checkpoint": str(pretrain_path),
+            "best_checkpoint": str(self.save_dir / "best_model.pth"),
+            "best_metrics": self.best_metrics,
+        }
+
+    def _set_learning_rate(self, lr: float) -> None:
+        self.learning_rate = lr
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
+        logger.info("Learning rate set to %s", lr)
 
     def _compute_loss(
         self, outputs: Dict[str, torch.Tensor], labels: Dict[str, torch.Tensor]

@@ -91,8 +91,72 @@ def parse_args():
         action="store_true",
         help="Skip samples without depth maps",
     )
-    
+
+    parser.add_argument(
+        "--sim-to-real",
+        action="store_true",
+        help="Run synthetic pretrain then real finetune (requires --synthetic-dir and --real-dir)",
+    )
+
+    parser.add_argument("--synthetic-dir", default="data/synthetic", help="Synthetic pretrain data")
+    parser.add_argument("--real-dir", default="data", help="Real finetune data")
+    parser.add_argument("--pretrain-epochs", type=int, default=None)
+    parser.add_argument("--finetune-epochs", type=int, default=None)
+    parser.add_argument("--no-tensorboard", action="store_true")
+
     return parser.parse_args()
+
+
+def _make_loaders(
+    data_dir: str,
+    batch_size: int,
+    target_resolution,
+    manifest_path,
+    depth_dir: str,
+    require_depth: bool,
+):
+    from swellsight.data.datasets import WaveDataset
+    from torch.utils.data import DataLoader
+
+    train_dataset = WaveDataset(
+        data_dir=data_dir,
+        split="train",
+        train_ratio=0.8,
+        target_resolution=target_resolution,
+        manifest_path=manifest_path,
+        depth_dir=depth_dir,
+        require_depth=require_depth,
+    )
+    val_dataset = WaveDataset(
+        data_dir=data_dir,
+        split="validation",
+        train_ratio=0.8,
+        target_resolution=target_resolution,
+        manifest_path=manifest_path,
+        depth_dir=depth_dir,
+        require_depth=require_depth,
+    )
+    if len(val_dataset) == 0 and len(train_dataset) > 0:
+        train_size = int(0.9 * len(train_dataset))
+        val_size = len(train_dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(
+            train_dataset, [train_size, val_size]
+        )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=torch.cuda.is_available(),
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=torch.cuda.is_available(),
+    )
+    return train_loader, val_loader, len(train_dataset), len(val_dataset)
 
 def main():
     """Main training function."""
@@ -129,7 +193,11 @@ def main():
         
         # Initialize trainer
         logger.info("Initializing trainer...")
-        trainer = WaveAnalysisTrainer(config)
+        log_dir = str(output_dir / "logs")
+        trainer = WaveAnalysisTrainer(
+            config,
+            log_dir=None if args.no_tensorboard else log_dir,
+        )
         
         # Resume from checkpoint if specified
         start_epoch = 0
@@ -140,9 +208,6 @@ def main():
         # Load data
         logger.info("Loading datasets...")
         try:
-            from swellsight.data.datasets import WaveDataset
-            from torch.utils.data import DataLoader
-            
             # Get data configuration
             if hasattr(config, 'training'):
                 batch_size = config.training.batch_size
@@ -165,77 +230,65 @@ def main():
 
             depth_dir = args.depth_dir or str(Path("data/depth_maps"))
 
-            train_dataset = WaveDataset(
-                data_dir=args.data_dir,
-                split='train',
-                train_ratio=0.8,
-                target_resolution=target_resolution,
-                manifest_path=manifest_path,
-                depth_dir=depth_dir,
-                require_depth=args.require_depth,
-            )
+            if args.sim_to_real:
+                from swellsight.mlops.experiment import ExperimentLogger
 
-            val_dataset = WaveDataset(
-                data_dir=args.data_dir,
-                split='validation',
-                train_ratio=0.8,
-                target_resolution=target_resolution,
-                manifest_path=manifest_path,
-                depth_dir=depth_dir,
-                require_depth=args.require_depth,
-            )
-            
-            # Check if we have data
-            if len(train_dataset) == 0:
-                logger.error(f"No training data found in {args.data_dir}")
-                logger.error("Please ensure your data directory contains .npy files with corresponding _labels.npy files")
-                logger.error("")
-                logger.error("Expected structure:")
-                logger.error("  data/")
-                logger.error("    image_001.npy")
-                logger.error("    image_001_labels.npy")
-                logger.error("    image_002.npy")
-                logger.error("    image_002_labels.npy")
-                logger.error("    ...")
-                return 1
-            
-            if len(val_dataset) == 0:
-                logger.warning("No validation data found. Using 10% of training data for validation.")
-                # Split training data
-                train_size = int(0.9 * len(train_dataset))
-                val_size = len(train_dataset) - train_size
-                train_dataset, val_dataset = torch.utils.data.random_split(
-                    train_dataset, [train_size, val_size]
+                exp = ExperimentLogger()
+                exp.start("sim-to-real", {"config": args.config})
+                exp.log_params(
+                    {
+                        "synthetic_dir": args.synthetic_dir,
+                        "real_dir": args.real_dir,
+                    }
                 )
-            
-            logger.info(f"[OK] Training samples: {len(train_dataset)}")
-            logger.info(f"[OK] Validation samples: {len(val_dataset)}")
-            
-            # Create data loaders
-            train_loader = DataLoader(
-                train_dataset,
-                batch_size=batch_size,
-                shuffle=True,
-                num_workers=0,  # Set to 0 for Windows compatibility
-                pin_memory=torch.cuda.is_available()
-            )
-            
-            val_loader = DataLoader(
-                val_dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=0,
-                pin_memory=torch.cuda.is_available()
-            )
-            
-            logger.info(f"[OK] Data loaders created (batch_size={batch_size})")
-            logger.info("")
-            
-            # Start training
-            logger.info("=" * 60)
-            logger.info("Starting Training")
-            logger.info("=" * 60)
-            trainer.train(train_loader, val_loader, num_epochs=num_epochs)
+
+                syn_train, syn_val, n_syn, _ = _make_loaders(
+                    args.synthetic_dir,
+                    batch_size,
+                    target_resolution,
+                    manifest_path,
+                    depth_dir,
+                    args.require_depth,
+                )
+                real_train, real_val, n_real, _ = _make_loaders(
+                    args.real_dir,
+                    batch_size,
+                    target_resolution,
+                    manifest_path,
+                    depth_dir,
+                    args.require_depth,
+                )
+                if n_syn == 0 or n_real == 0:
+                    logger.error("Sim-to-real needs data in both synthetic (%s) and real (%s) dirs", args.synthetic_dir, args.real_dir)
+                    return 1
+
+                result = trainer.train_sim_to_real(
+                    syn_train,
+                    syn_val,
+                    real_train,
+                    real_val,
+                    pretrain_epochs=args.pretrain_epochs,
+                    finetune_epochs=args.finetune_epochs,
+                )
+                exp.log_metrics(trainer.best_metrics)
+                logger.info("Sim-to-real result: %s", result)
+            else:
+                train_loader, val_loader, n_train, n_val = _make_loaders(
+                    args.data_dir,
+                    batch_size,
+                    target_resolution,
+                    manifest_path,
+                    depth_dir,
+                    args.require_depth,
+                )
+                if n_train == 0:
+                    logger.error("No training data in %s", args.data_dir)
+                    return 1
+                logger.info("[OK] Training samples: %s | Validation: %s", n_train, n_val)
+                logger.info("=" * 60)
+                logger.info("Starting Training")
+                logger.info("=" * 60)
+                trainer.train(train_loader, val_loader, num_epochs=num_epochs)
             
             logger.info("")
             logger.info("=" * 60)

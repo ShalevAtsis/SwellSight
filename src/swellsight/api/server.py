@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from .endpoints import router
+from .v1 import api_v1_router
 from .deployment import ModelServer
 from ..core.pipeline import WaveAnalysisPipeline
 from ..utils.logging import setup_logging
@@ -113,8 +114,9 @@ def create_app() -> FastAPI:
     
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     
-    # Include routers
+    # Legacy analysis routes + platform v1 (auth, analyses queue)
     app.include_router(router, prefix="/api/v1")
+    app.include_router(api_v1_router, prefix="/api")
     
     # Health check endpoint
     @app.get("/health")

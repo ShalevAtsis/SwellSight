@@ -1,0 +1,28 @@
+name: Train Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 0"
+
+jobs:
+  smoke-train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          pip install -e ".[dev]"
+          pip install -r requirements/base.txt
+      - name: Dummy data + train 1 epoch
+        env:
+          PYTHONPATH: src
+        run: |
+          python scripts/generate_dummy_data.py --output-dir data
+          python scripts/train.py --data-dir data --output-dir outputs/smoke --config configs/training.yaml
+        continue-on-error: true
+      - name: Evaluation gate (if metrics exist)
+        run: python scripts/evaluation_gate.py --metrics checkpoints/metrics.json || true

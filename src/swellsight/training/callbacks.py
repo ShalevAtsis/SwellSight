@@ -1,66 +1,107 @@
 """
-Training callbacks and monitoring for wave analysis training.
-
-Implements callbacks for logging, checkpointing, and early stopping.
+Training callbacks for logging, checkpointing, and monitoring.
 """
 
-from typing import Dict, Any, List
+from __future__ import annotations
+
+import json
+import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
 
 class TrainingCallback(ABC):
-    """Abstract base class for training callbacks."""
-    
     @abstractmethod
-    def on_epoch_start(self, epoch: int, logs: Dict[str, Any] = None):
-        """Called at the start of each epoch."""
-        pass
-    
-    @abstractmethod
-    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
-        """Called at the end of each epoch."""
-        pass
-    
-    @abstractmethod
-    def on_batch_start(self, batch: int, logs: Dict[str, Any] = None):
-        """Called at the start of each batch."""
-        pass
-    
-    @abstractmethod
-    def on_batch_end(self, batch: int, logs: Dict[str, Any] = None):
-        """Called at the end of each batch."""
+    def on_epoch_start(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
         pass
 
+    @abstractmethod
+    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        pass
+
+    def on_batch_start(self, batch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        pass
+
+    def on_batch_end(self, batch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        pass
+
+
 class TrainingCallbacks:
-    """Collection of training callbacks."""
-    
-    def __init__(self, callbacks: List[TrainingCallback] = None):
-        """Initialize callback collection.
-        
-        Args:
-            callbacks: List of callback instances
-        """
+    def __init__(self, callbacks: Optional[List[TrainingCallback]] = None):
         self.callbacks = callbacks or []
-    
-    def add_callback(self, callback: TrainingCallback):
-        """Add a callback to the collection."""
+
+    def add_callback(self, callback: TrainingCallback) -> None:
         self.callbacks.append(callback)
-    
-    def on_epoch_start(self, epoch: int, logs: Dict[str, Any] = None):
-        """Call all callbacks at epoch start."""
+
+    def on_epoch_start(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
         for callback in self.callbacks:
             callback.on_epoch_start(epoch, logs)
-    
-    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
-        """Call all callbacks at epoch end."""
+
+    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
         for callback in self.callbacks:
             callback.on_epoch_end(epoch, logs)
-    
-    def on_batch_start(self, batch: int, logs: Dict[str, Any] = None):
-        """Call all callbacks at batch start."""
-        for callback in self.callbacks:
-            callback.on_batch_start(batch, logs)
-    
-    def on_batch_end(self, batch: int, logs: Dict[str, Any] = None):
-        """Call all callbacks at batch end."""
-        for callback in self.callbacks:
-            callback.on_batch_end(batch, logs)
+
+
+class TensorBoardCallback(TrainingCallback):
+    """Log train/val metrics to TensorBoard."""
+
+    def __init__(self, log_dir: str):
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except ImportError as exc:
+            raise ImportError("Install tensorboard: pip install tensorboard") from exc
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.writer = SummaryWriter(str(self.log_dir))
+        self._phase = "train"
+
+    def on_epoch_start(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        if logs and "phase" in logs:
+            self._phase = logs["phase"]
+
+    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        if not logs:
+            return
+        prefix = logs.get("prefix", self._phase)
+        for key, value in logs.items():
+            if key in ("prefix", "phase"):
+                continue
+            if isinstance(value, (int, float)):
+                self.writer.add_scalar(f"{prefix}/{key}", value, epoch)
+        self.writer.flush()
+
+    def close(self) -> None:
+        self.writer.close()
+
+
+class JsonMetricsCallback(TrainingCallback):
+    """Append per-epoch metrics to a JSON lines file."""
+
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:
+        if not logs:
+            return
+        record = {"epoch": epoch, **logs}
+        with open(self.path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+
+
+def build_default_callbacks(
+    log_dir: Optional[str] = None,
+    tensorboard: bool = True,
+) -> TrainingCallbacks:
+    callbacks = TrainingCallbacks()
+    if log_dir:
+        callbacks.add_callback(JsonMetricsCallback(str(Path(log_dir) / "epoch_metrics.jsonl")))
+        if tensorboard:
+            try:
+                callbacks.add_callback(TensorBoardCallback(str(Path(log_dir) / "tensorboard")))
+            except ImportError:
+                logger.warning("TensorBoard not installed; skipping TB callback")
+    return callbacks

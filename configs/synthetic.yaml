@@ -1,0 +1,19 @@
+# Synthetic data generation (scripts/generate_synthetic_data.py)
+_base_: "default.yaml"
+
+synthetic:
+  num_images: 500
+  mode: "from-depth"  # from-depth | balanced
+  controlnet_conditioning_scale: 0.5
+  output_dir: "data/synthetic"
+  depth_dir: "data/depth_maps"
+
+  prompts:
+    - "ocean waves at beach, sunny day, clear water"
+    - "stormy surf, dark clouds, dramatic waves"
+    - "foggy morning beach, soft light, gentle waves"
+    - "sunset golden hour, warm tones, breaking waves"
+
+  weather_variants:
+    lighting: ["dawn", "day", "dusk"]
+    weather: ["clear", "overcast", "stormy", "foggy"]
