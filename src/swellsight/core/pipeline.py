@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List, Union
 from dataclasses import dataclass, asdict
 import numpy as np
 import logging
+import os
 import time
 import json
 from pathlib import Path
@@ -152,6 +153,12 @@ class WaveAnalysisPipeline:
             config: Pipeline configuration parameters
         """
         self.config = config or PipelineConfig()
+        if self.config.wave_checkpoint_path is None:
+            env_ckpt = os.environ.get("SWELLSIGHT_CHECKPOINT") or os.environ.get(
+                "SWELLSIGHT_MODEL_PATH"
+            )
+            if env_ckpt:
+                self.config.wave_checkpoint_path = env_ckpt
         self.config.validate()  # Validate configuration
         
         self.logger = logging.getLogger(__name__)

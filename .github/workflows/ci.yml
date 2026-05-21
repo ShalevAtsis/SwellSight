@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install -r requirements/base.txt
+
+      - name: Verify package import
+        run: python -c "from swellsight.utils.config import ConfigManager; print('ok')"
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: |
+          pytest tests/ -q --tb=short -m "not gpu and not slow" \
+            --no-cov -x --ignore=tests/unit/test_synthetic_generator.py \
+            --ignore=tests/integration/test_pipeline.py
+
+      - name: Validate data layout script
+        run: python scripts/validate_data_layout.py --create-missing

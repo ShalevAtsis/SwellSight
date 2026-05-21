@@ -16,7 +16,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from swellsight.core.pipeline import PipelineConfig, WaveAnalysisPipeline
+from swellsight.inference.batch import BatchInferenceRunner
+from swellsight.core.pipeline import PipelineConfig
 from swellsight.utils.config import ConfigManager, load_yaml_dict
 from swellsight.utils.logging import setup_logging
 
@@ -88,22 +89,6 @@ def _load_rgb(image_path: Path) -> np.ndarray:
     return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
 
-def _result_to_json(result) -> dict:
-    metrics = result.wave_metrics
-    return {
-        "wave_height_meters": round(metrics.height_meters, 3),
-        "wave_height_feet": round(metrics.height_feet, 2),
-        "direction": metrics.direction,
-        "direction_confidence": round(metrics.direction_confidence, 4),
-        "breaking_type": metrics.breaking_type,
-        "breaking_confidence": round(metrics.breaking_confidence, 4),
-        "overall_confidence": round(result.pipeline_confidence, 4),
-        "processing_time_seconds": round(result.processing_time, 3),
-        "extreme_conditions": metrics.extreme_conditions,
-        "warnings": result.warnings,
-    }
-
-
 def main() -> int:
     args = parse_args()
     setup_logging(level="DEBUG" if args.debug else "INFO")
@@ -119,7 +104,8 @@ def main() -> int:
 
     ConfigManager(args.config)
     pipeline_config = _pipeline_config_from_yaml(args.config, args.checkpoint)
-    pipeline = WaveAnalysisPipeline(config=pipeline_config)
+    runner = BatchInferenceRunner(config=pipeline_config)
+    runner.warmup()
 
     images = _collect_images(input_path)
     if not images:
@@ -132,8 +118,7 @@ def main() -> int:
     for image_path in images:
         try:
             rgb = _load_rgb(image_path)
-            result = pipeline.process_beach_cam_image(rgb)
-            payload = _result_to_json(result)
+            payload = runner.analyze_image(rgb)
             all_results[image_path.name] = payload
 
             out_file = output_dir / f"{image_path.stem}_analysis.json"

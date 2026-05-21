@@ -1,268 +1,285 @@
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from pathlib import Path
 from tqdm import tqdm
-import numpy as np
-import logging
-from typing import Dict, Any, Optional, Union
 
-# Import the model we defined in the previous step
+from swellsight.models.losses import MultiTaskLoss
 from swellsight.models.wave_model import WaveAnalysisModel
+from swellsight.training.scheduler import create_lr_scheduler
+
+logger = logging.getLogger(__name__)
+
 
 class WaveAnalysisTrainer:
-    """
-    Trainer for the SwellSight Wave Analysis Model.
-    Handles the training loop, loss calculation, and checkpointing.
-    """
-    
+    """Trainer for the SwellSight wave analysis model."""
+
     def __init__(self, config: Union[Dict[str, Any], Any]):
-        """
-        Initialize trainer with configuration.
-        
-        Args:
-            config: Configuration dict or SwellSightConfig object
-        """
         self.config = config
-        self.logger = logging.getLogger(__name__)
-        
-        # Handle both dict and config object
-        if hasattr(config, 'training'):
-            # Config object (SwellSightConfig)
+        self._read_config(config)
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        self.model = WaveAnalysisModel(config).to(self.device)
+
+        self.criterion = MultiTaskLoss(
+            height_weight=self.weights["height"],
+            direction_weight=self.weights["direction"],
+            breaking_weight=self.weights["breaking_type"],
+            adaptive_weighting=self.adaptive_weighting,
+        ).to(self.device)
+
+        params = list(self.model.parameters()) + list(self.criterion.parameters())
+        params = [p for p in params if p.requires_grad]
+
+        if self.optimizer_name == "AdamW":
+            self.optimizer = optim.AdamW(
+                params, lr=self.learning_rate, weight_decay=self.weight_decay
+            )
+        else:
+            self.optimizer = optim.Adam(params, lr=self.learning_rate)
+
+        scheduler_type = getattr(self, "scheduler_type", "warmup_cosine")
+        if scheduler_type == "cosine" and self.warmup_epochs > 0:
+            scheduler_type = "warmup_cosine"
+
+        self.scheduler = create_lr_scheduler(
+            self.optimizer,
+            scheduler_type=scheduler_type,
+            num_epochs=self.num_epochs,
+            warmup_epochs=self.warmup_epochs,
+            min_lr=self.cosine_min_lr,
+        )
+
+        self.best_metrics: Dict[str, float] = {}
+
+        logger.info(
+            "Trainer ready: device=%s trainable=%s lr=%s",
+            self.device,
+            f"{sum(p.numel() for p in params):,}",
+            self.learning_rate,
+        )
+
+    def _read_config(self, config: Union[Dict[str, Any], Any]) -> None:
+        if hasattr(config, "training"):
             train_conf = config.training
             log_conf = config.system
             self.batch_size = train_conf.batch_size
             self.learning_rate = train_conf.learning_rate
             self.num_epochs = train_conf.num_epochs
             self.weight_decay = train_conf.weight_decay
-            self.optimizer_name = 'AdamW'
-            checkpoints = getattr(config, 'paths', None)
-            if checkpoints is not None:
-                self.save_dir = Path(checkpoints.checkpoints_dir)
-            else:
-                self.save_dir = Path(log_conf.output_dir) / 'checkpoints'
+            self.gradient_clip_norm = train_conf.gradient_clip_norm
+            self.optimizer_name = "AdamW"
             self.save_frequency = train_conf.save_checkpoint_every
-            
-            # Loss weights
+            self.early_stopping_patience = train_conf.early_stopping_patience
+            self.adaptive_weighting = train_conf.adaptive_loss_weighting
+            self.scheduler_type = train_conf.scheduler_type
+            self.warmup_epochs = train_conf.warmup_epochs
+            self.cosine_min_lr = train_conf.cosine_min_lr
             self.weights = {
-                'height': train_conf.height_loss_weight,
-                'direction': train_conf.direction_loss_weight,
-                'breaking_type': train_conf.breaking_loss_weight
+                "height": train_conf.height_loss_weight,
+                "direction": train_conf.direction_loss_weight,
+                "breaking_type": train_conf.breaking_loss_weight,
             }
+            checkpoints = getattr(config, "paths", None)
+            self.save_dir = (
+                Path(checkpoints.checkpoints_dir)
+                if checkpoints
+                else Path(log_conf.output_dir) / "checkpoints"
+            )
         else:
-            # Dict config
-            train_conf = config.get('training', {})
-            log_conf = config.get('logging', {})
-            self.batch_size = train_conf.get('batch_size', 32)
-            self.learning_rate = float(train_conf.get('learning_rate', 1e-4))
-            self.num_epochs = train_conf.get('num_epochs', 100)
-            self.weight_decay = float(train_conf.get('weight_decay', 0.01))
-            self.optimizer_name = train_conf.get('optimizer', 'AdamW')
-            self.save_dir = Path(log_conf.get('save_dir', 'models/checkpoints'))
-            self.save_frequency = train_conf.get('save_checkpoint_every', 5)
-            
-            # Loss weights
-            self.weights = train_conf.get('loss_weights', 
-                                        {'height': 1.0, 'direction': 1.0, 'breaking_type': 1.0})
-        
-        # 1. Setup Device & Directories
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.save_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 2. Initialize Model
-        self.logger.info(f"Initializing model on {self.device}...")
-        self.model = WaveAnalysisModel(config).to(self.device)
-        
-        # 3. Define Loss Functions
-        # Height = Regression (MSE)
-        self.height_loss = nn.MSELoss()
-        # Direction & Breaking = Classification (CrossEntropy)
-        self.direction_loss = nn.CrossEntropyLoss()
-        self.breaking_loss = nn.CrossEntropyLoss()
-        
-        # 4. Setup Optimizer
-        # Filter parameters to only optimize those that require gradients 
-        # (This handles the 'freeze_backbone' setting automatically)
-        params = [p for p in self.model.parameters() if p.requires_grad]
-        
-        if self.optimizer_name == 'AdamW':
-            self.optimizer = optim.AdamW(params, lr=self.learning_rate, weight_decay=self.weight_decay)
-        else:
-            self.optimizer = optim.Adam(params, lr=self.learning_rate)
-            
-        self.logger.info(f"[OK] Model initialized. Trainable parameters: {sum(p.numel() for p in params)}")
-        self.logger.info(f"[OK] Device: {self.device}")
-        self.logger.info(f"[OK] Optimizer: {self.optimizer_name}, LR: {self.learning_rate}")
+            train_conf = config.get("training", {})
+            log_conf = config.get("logging", {})
+            self.batch_size = train_conf.get("batch_size", 32)
+            self.learning_rate = float(train_conf.get("learning_rate", 1e-4))
+            self.num_epochs = train_conf.get("num_epochs", 100)
+            self.weight_decay = float(train_conf.get("weight_decay", 0.01))
+            self.gradient_clip_norm = float(train_conf.get("gradient_clip_norm", 1.0))
+            self.optimizer_name = train_conf.get("optimizer", "AdamW")
+            self.save_dir = Path(log_conf.get("save_dir", "checkpoints"))
+            self.save_frequency = train_conf.get("save_checkpoint_every", 5)
+            self.early_stopping_patience = train_conf.get("early_stopping_patience", 20)
+            self.adaptive_weighting = train_conf.get("adaptive_weighting", True)
+            self.scheduler_type = train_conf.get("scheduler", "warmup_cosine")
+            self.warmup_epochs = train_conf.get("warmup_epochs", 5)
+            self.cosine_min_lr = float(train_conf.get("min_lr", 1e-6))
+            self.weights = train_conf.get(
+                "loss_weights",
+                {"height": 1.0, "direction": 1.0, "breaking_type": 1.0},
+            )
 
     def train(self, train_loader, val_loader, num_epochs: Optional[int] = None):
-        """
-        Main training loop.
-        
-        Args:
-            train_loader: DataLoader for training data
-            val_loader: DataLoader for validation data
-            num_epochs: Number of epochs (overrides config if provided)
-        """
         if num_epochs is None:
             num_epochs = self.num_epochs
-            
-        best_val_loss = float('inf')
-        
-        self.logger.info(f"Starting training for {num_epochs} epochs...")
-        
+
+        best_val_loss = float("inf")
+        epochs_without_improve = 0
+
+        logger.info("Starting training for %s epochs...", num_epochs)
+
         for epoch in range(num_epochs):
-            self.logger.info(f"\nEpoch {epoch+1}/{num_epochs}")
-            
-            # --- Training Phase ---
+            logger.info("Epoch %s/%s", epoch + 1, num_epochs)
+
             train_metrics = self._run_epoch(train_loader, is_training=True)
             self._log_metrics(train_metrics, "Train")
-            
-            # --- Validation Phase ---
+
             val_metrics = self._run_epoch(val_loader, is_training=False)
             self._log_metrics(val_metrics, "Val")
-            
-            # --- Checkpointing ---
-            current_val_loss = val_metrics['total_loss']
-            
-            # Save if Best
+
+            if self.scheduler is not None and not isinstance(
+                self.scheduler, optim.lr_scheduler.ReduceLROnPlateau
+            ):
+                self.scheduler.step()
+
+            current_val_loss = val_metrics["total_loss"]
             if current_val_loss < best_val_loss:
                 best_val_loss = current_val_loss
+                epochs_without_improve = 0
+                self.best_metrics = val_metrics
                 self._save_checkpoint(epoch, val_metrics, is_best=True)
-                self.logger.info(f"[BEST] New Best Model Saved (Loss: {best_val_loss:.4f})")
-            
-            # Save Periodic
+                self._write_metrics_json(val_metrics)
+                logger.info("[BEST] validation loss %.4f", best_val_loss)
+            else:
+                epochs_without_improve += 1
+
             if (epoch + 1) % self.save_frequency == 0:
                 self._save_checkpoint(epoch, val_metrics, is_best=False)
-        
-        self.logger.info(f"Training completed! Best validation loss: {best_val_loss:.4f}")
 
-    def _run_epoch(self, loader, is_training):
-        """Runs a single epoch of training or validation."""
+            if epochs_without_improve >= self.early_stopping_patience:
+                logger.info("Early stopping after %s epochs without improvement", epochs_without_improve)
+                break
+
+        logger.info("Training done. Best val loss: %.4f", best_val_loss)
+
+    def _compute_loss(
+        self, outputs: Dict[str, torch.Tensor], labels: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
+        if "height" in outputs:
+            predictions = {
+                "height_meters": outputs["height"],
+                "direction_logits": outputs["direction"],
+                "breaking_logits": outputs["breaking_type"],
+            }
+        else:
+            predictions = outputs
+
+        targets = {
+            "height_meters": labels["height"].view(-1, 1),
+            "direction_labels": labels["direction"],
+            "breaking_labels": labels["breaking_type"],
+        }
+        return self.criterion(predictions, targets)
+
+    def _run_epoch(self, loader, is_training: bool) -> Dict[str, float]:
         if is_training:
             self.model.train()
+            self.criterion.train()
         else:
             self.model.eval()
-            
-        total_loss = 0
+            self.criterion.eval()
+
+        total_loss = 0.0
         height_losses = []
         dir_accs = []
         break_accs = []
-        
-        # Use TQDM for progress bar
+
         pbar = tqdm(loader, desc="Training" if is_training else "Validating", leave=False)
-        
+
         for batch in pbar:
-            # 1. Unpack Batch & Move to Device
-            inputs = batch['input'].to(self.device) # Shape: (B, 4, H, W)
-            labels = batch['labels']
-            
-            h_target = labels['height'].to(self.device).view(-1, 1) # Regression target (B, 1)
-            d_target = labels['direction'].to(self.device)          # Class index (B,)
-            b_target = labels['breaking_type'].to(self.device)      # Class index (B,)
-            
-            # 2. Zero Gradients
+            inputs = batch["input"].to(self.device)
+            labels = batch["labels"]
+
             if is_training:
                 self.optimizer.zero_grad()
-            
-            # 3. Forward Pass
+
             with torch.set_grad_enabled(is_training):
                 if hasattr(self.model, "forward_training"):
                     outputs = self.model.forward_training(inputs)
                 else:
-                    outputs = self.model(inputs)
-                    if "height_meters" in outputs:
-                        outputs = {
-                            "height": outputs["height_meters"].view(-1, 1),
-                            "direction": outputs["direction_logits"],
-                            "breaking_type": outputs["breaking_logits"],
-                        }
-                
-                # 4. Calculate Losses
-                loss_h = self.height_loss(outputs['height'], h_target)
-                loss_d = self.direction_loss(outputs['direction'], d_target)
-                loss_b = self.breaking_loss(outputs['breaking_type'], b_target)
-                
-                # Weighted Sum
-                loss = (self.weights['height'] * loss_h + 
-                        self.weights['direction'] * loss_d + 
-                        self.weights['breaking_type'] * loss_b)
-                
-                # 5. Backward Pass
+                    raw = self.model(inputs)
+                    outputs = {
+                        "height": raw["height_meters"].view(-1, 1),
+                        "direction": raw["direction_logits"],
+                        "breaking_type": raw["breaking_logits"],
+                    }
+
+                loss_dict = self._compute_loss(outputs, labels)
+                loss = loss_dict["total_loss"]
+
                 if is_training:
                     loss.backward()
+                    if self.gradient_clip_norm > 0:
+                        torch.nn.utils.clip_grad_norm_(
+                            self.model.parameters(), self.gradient_clip_norm
+                        )
                     self.optimizer.step()
-            
-            # 6. Update Metrics
+
+            d_target = labels["direction"].to(self.device)
+            b_target = labels["breaking_type"].to(self.device)
             batch_size = inputs.size(0)
             total_loss += loss.item() * batch_size
-            height_losses.append(loss_h.item())
-            
-            # Calculate Accuracies
-            _, d_pred = torch.max(outputs['direction'], 1)
-            dir_acc = (d_pred == d_target).float().mean().item()
-            dir_accs.append(dir_acc)
-            
-            _, b_pred = torch.max(outputs['breaking_type'], 1)
-            break_acc = (b_pred == b_target).float().mean().item()
-            break_accs.append(break_acc)
-            
-            # Update Progress Bar
-            pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-            
-        # Aggregate metrics over epoch
-        avg_loss = total_loss / len(loader.dataset)
+            height_losses.append(loss_dict["height_loss"].item())
+
+            _, d_pred = torch.max(outputs["direction"], 1)
+            dir_accs.append((d_pred == d_target).float().mean().item())
+            _, b_pred = torch.max(outputs["breaking_type"], 1)
+            break_accs.append((b_pred == b_target).float().mean().item())
+
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+        n = max(len(loader.dataset), 1)
         return {
-            'total_loss': avg_loss,
-            'height_mse': np.mean(height_losses),
-            'direction_acc': np.mean(dir_accs),
-            'breaking_acc': np.mean(break_accs)
+            "total_loss": total_loss / n,
+            "height_mse": float(np.mean(height_losses)),
+            "direction_acc": float(np.mean(dir_accs)),
+            "breaking_acc": float(np.mean(break_accs)),
         }
 
-    def _log_metrics(self, metrics: Dict[str, float], prefix: str):
-        """Print metrics to console and logger."""
-        msg = (f"  {prefix} Loss: {metrics['total_loss']:.4f} | "
-               f"Height MSE: {metrics['height_mse']:.4f} | "
-               f"Dir Acc: {metrics['direction_acc']:.2%} | "
-               f"Brk Acc: {metrics['breaking_acc']:.2%}")
-        self.logger.info(msg)
+    def _log_metrics(self, metrics: Dict[str, float], prefix: str) -> None:
+        logger.info(
+            "  %s Loss: %.4f | Height MSE: %.4f | Dir Acc: %.2f%% | Brk Acc: %.2f%%",
+            prefix,
+            metrics["total_loss"],
+            metrics["height_mse"],
+            metrics["direction_acc"] * 100,
+            metrics["breaking_acc"] * 100,
+        )
 
     def _save_checkpoint(self, epoch: int, metrics: Dict[str, float], is_best: bool = False):
-        """Save model checkpoint to disk."""
         filename = "best_model.pth" if is_best else f"checkpoint_epoch_{epoch+1}.pth"
         path = self.save_dir / filename
-        
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'metrics': metrics,
-            'config': self.config
-        }
-        
-        torch.save(checkpoint, path)
-        self.logger.info(f"Checkpoint saved: {path}")
-    
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": self.model.state_dict(),
+                "criterion_state_dict": self.criterion.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "metrics": metrics,
+                "config": self.config,
+            },
+            path,
+        )
+        logger.info("Checkpoint saved: %s", path)
+
+    def _write_metrics_json(self, metrics: Dict[str, float]) -> None:
+        path = self.save_dir / "metrics.json"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(metrics, handle, indent=2)
+
     def load_checkpoint(self, checkpoint_path: Union[str, Path]):
-        """Load model checkpoint from disk.
-        
-        Args:
-            checkpoint_path: Path to checkpoint file
-        """
         checkpoint_path = Path(checkpoint_path)
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-        
-        self.logger.info(f"Loading checkpoint from {checkpoint_path}...")
-        # Use weights_only=False for backward compatibility with older checkpoints
+
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        
-        epoch = checkpoint.get('epoch', 0)
-        metrics = checkpoint.get('metrics', {})
-        
-        self.logger.info(f"[OK] Checkpoint loaded (Epoch {epoch+1})")
-        self.logger.info(f"  Metrics: {metrics}")
-        
-        return epoch, metrics
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        if "criterion_state_dict" in checkpoint:
+            self.criterion.load_state_dict(checkpoint["criterion_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        return checkpoint.get("epoch", 0), checkpoint.get("metrics", {})

@@ -217,7 +217,10 @@ Produces `outputs/evaluation/metrics.json` (loss, height MSE, direction/breaking
 | `scripts/evaluate.py` | **Supported** | Metrics on labeled `.npy` data |
 | `scripts/check_training_readiness.py` | **Supported** | Environment/data checks |
 | `scripts/generate_dummy_data.py` | **Supported** | Smoke-test dataset |
-| `scripts/extract_depth_maps.py` | Colab-oriented | Depth-Anything batch |
+| `scripts/extract_depth_maps.py` | **Supported** | Local Depth-Anything batch (`--input`, `--output`) |
+| `scripts/validate_data_layout.py` | **Supported** | Create/check standard `data/` tree |
+| `scripts/build_dataset_manifest.py` | **Supported** | Build `data/manifests/dataset_manifest.json` |
+| `scripts/evaluation_gate.py` | **Supported** | CI thresholds on `checkpoints/metrics.json` |
 | `scripts/generate_synthetic_data.py` | Colab-oriented | FLUX synthetic data |
 | `scripts/start_api.py` | Partial | REST API (Phase 2) |
 

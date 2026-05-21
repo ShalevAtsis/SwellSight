@@ -69,8 +69,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/swellsight/wave-analysis-system"
-Repository = "https://github.com/swellsight/wave-analysis-system"
+Homepage = "https://github.com/ShalevAtsis/SwellSight"
+Repository = "https://github.com/ShalevAtsis/SwellSight"
 Documentation = "https://swellsight.readthedocs.io"
 "Bug Tracker" = "https://github.com/swellsight/wave-analysis-system/issues"
 
@@ -145,10 +145,6 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=src/swellsight",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

@@ -65,6 +65,32 @@ def parse_args():
         action="store_true",
         help="Enable debug logging"
     )
+
+    parser.add_argument(
+        "--manifest",
+        type=str,
+        default=None,
+        help="Path to dataset_manifest.json (optional)",
+    )
+
+    parser.add_argument(
+        "--depth-dir",
+        type=str,
+        default=None,
+        help="Directory with *_depth.npy files (default: data/depth_maps)",
+    )
+
+    parser.add_argument(
+        "--build-manifest",
+        action="store_true",
+        help="Build manifest from data-dir before training",
+    )
+
+    parser.add_argument(
+        "--require-depth",
+        action="store_true",
+        help="Skip samples without depth maps",
+    )
     
     return parser.parse_args()
 
@@ -129,20 +155,34 @@ def main():
                 target_resolution = tuple(config.data.target_resolution)
             else:
                 target_resolution = tuple(config.get('data', {}).get('target_resolution', [518, 518]))
-            
-            # Create datasets
+
+            manifest_path = args.manifest
+            if args.build_manifest:
+                from swellsight.data.manifest import build_manifest
+                manifest_path = str(Path(args.data_dir).parent / "manifests" / "dataset_manifest.json")
+                build_manifest(args.data_dir, manifest_path)
+                logger.info("Built manifest: %s", manifest_path)
+
+            depth_dir = args.depth_dir or str(Path("data/depth_maps"))
+
             train_dataset = WaveDataset(
                 data_dir=args.data_dir,
                 split='train',
                 train_ratio=0.8,
-                target_resolution=target_resolution
+                target_resolution=target_resolution,
+                manifest_path=manifest_path,
+                depth_dir=depth_dir,
+                require_depth=args.require_depth,
             )
-            
+
             val_dataset = WaveDataset(
                 data_dir=args.data_dir,
                 split='validation',
                 train_ratio=0.8,
-                target_resolution=target_resolution
+                target_resolution=target_resolution,
+                manifest_path=manifest_path,
+                depth_dir=depth_dir,
+                require_depth=args.require_depth,
             )
             
             # Check if we have data

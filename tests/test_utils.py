@@ -10,7 +10,7 @@ import numpy as np
 from pathlib import Path
 
 # Add utils to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Repo root on path via tests/conftest.py
 
 def test_config_manager():
     """Test configuration management functionality"""

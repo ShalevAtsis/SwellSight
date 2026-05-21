@@ -4,6 +4,12 @@
 _base_: "default.yaml"
 
 evaluation:
+  # CI / training gate thresholds (scripts/evaluation_gate.py)
+  thresholds:
+    max_height_mse: 0.5
+    min_direction_acc: 0.5
+    min_breaking_acc: 0.5
+
   # Metrics configuration
   height_accuracy_threshold: 0.2  # ±0.2m accuracy target
   direction_accuracy_target: 0.9   # 90% accuracy target
