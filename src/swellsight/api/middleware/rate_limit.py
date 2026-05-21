@@ -31,7 +31,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return self._redis
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        if request.url.path.endswith("/health") or request.url.path.endswith("/live"):
+        if request.url.path.endswith("/health") or request.url.path.endswith("/live") or request.url.path == "/metrics":
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"

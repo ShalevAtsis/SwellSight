@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+# Import models only (avoid pulling ML stack via package __init__)
 from swellsight.db.models import Base  # noqa: E402
 
 config = context.config

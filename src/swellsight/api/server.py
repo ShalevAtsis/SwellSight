@@ -18,6 +18,7 @@ from .endpoints import router
 from .v1 import api_v1_router
 from .deployment import ModelServer
 from .middleware.rate_limit import RateLimitMiddleware
+from .metrics import MetricsMiddleware, router as metrics_router
 from ..core.pipeline import WaveAnalysisPipeline
 from ..platform.checks import platform_readiness
 from ..platform.settings import get_settings
@@ -126,8 +127,10 @@ def create_app() -> FastAPI:
         RateLimitMiddleware,
         limit_per_minute=settings.rate_limit_per_minute,
     )
+    app.add_middleware(MetricsMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
-    
+
+    app.include_router(metrics_router)
     # Legacy analysis routes + platform v1 (auth, analyses queue)
     app.include_router(router, prefix="/api/v1")
     app.include_router(api_v1_router, prefix="/api")

@@ -4,6 +4,7 @@ Model registry for checkpoint promotion and deployment tracking.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ class ModelVersion:
     created_at: str
     git_sha: Optional[str] = None
     data_manifest: Optional[str] = None
+    data_manifest_sha256: Optional[str] = None
     metrics: Dict[str, Any] = field(default_factory=dict)
     status: str = "staging"
     model_card: Optional[str] = None
@@ -49,6 +51,7 @@ class ModelRegistry:
                     "created_at": v.created_at,
                     "git_sha": v.git_sha,
                     "data_manifest": v.data_manifest,
+                    "data_manifest_sha256": v.data_manifest_sha256,
                     "metrics": v.metrics,
                     "status": v.status,
                     "model_card": v.model_card,
@@ -71,6 +74,16 @@ def save_registry(registry: ModelRegistry, path: Optional[Path] = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         yaml.dump(registry.to_dict(), handle, default_flow_style=False, sort_keys=False)
+
+
+def _file_sha256(path: Path) -> Optional[str]:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _git_sha() -> Optional[str]:
@@ -111,12 +124,20 @@ def promote_checkpoint(
     except ValueError:
         ckpt_ref = str(dest)
 
+    manifest_sha = None
+    if data_manifest:
+        manifest_path = Path(data_manifest)
+        if not manifest_path.is_absolute():
+            manifest_path = REPO_ROOT / manifest_path
+        manifest_sha = _file_sha256(manifest_path)
+
     version = ModelVersion(
         id=version_id,
         checkpoint=ckpt_ref,
         created_at=datetime.now(timezone.utc).isoformat(),
         git_sha=_git_sha(),
         data_manifest=data_manifest,
+        data_manifest_sha256=manifest_sha,
         metrics=metrics or {},
         status=status,
         model_card=f"docs/models/{version_id}.md",

@@ -1,0 +1,33 @@
+# GPU worker image — P5-T02
+# Build: docker build -f deploy/Dockerfile.worker -t swellsight-worker .
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY requirements/ requirements/
+COPY src/ src/
+COPY scripts/worker.py scripts/worker.py
+COPY configs/ configs/
+COPY models/ models/
+
+RUN pip install --upgrade pip \
+    && pip install -e ".[platform,training,inference]"
+
+RUN mkdir -p data/uploads checkpoints logs \
+    && useradd --create-home swellsight \
+    && chown -R swellsight:swellsight /app
+USER swellsight
+
+CMD ["python", "scripts/worker.py"]

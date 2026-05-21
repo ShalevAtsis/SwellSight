@@ -23,6 +23,7 @@ class AnalysisJob:
     analysis_id: str
     user_id: str
     storage_key: str
+    correlation_id: str = ""
     attempts: int = 0
     max_attempts: int = 3
 
@@ -47,6 +48,7 @@ class JobQueue:
             analysis_id=analysis_id,
             user_id=user_id,
             storage_key=storage_key,
+            correlation_id=analysis_id,
         )
         self.client.rpush(QUEUE_KEY, job.to_json())
         return job

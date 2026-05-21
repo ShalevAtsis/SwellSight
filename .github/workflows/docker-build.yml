@@ -1,0 +1,19 @@
+name: Docker build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f deploy/Dockerfile.api -t swellsight-api:ci .
+
+      - name: Build worker image
+        run: docker build -f deploy/Dockerfile.worker -t swellsight-worker:ci .

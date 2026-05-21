@@ -1,6 +1,8 @@
 # Backend platform (P3): API, DB, queue, auth
 -r base.txt
 
+psutil>=5.9.0
+
 sqlalchemy>=2.0.0
 alembic>=1.12.0
 psycopg2-binary>=2.9.0

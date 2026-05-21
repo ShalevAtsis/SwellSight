@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -126,6 +127,37 @@ async def create_analysis(
         db.refresh(row)
 
     return _to_response(row)
+
+
+@router.get("/{analysis_id}/image")
+def get_analysis_image(
+    analysis_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return uploaded image bytes for history thumbnails (P4-T09)."""
+    row = (
+        db.query(Analysis)
+        .filter(Analysis.id == analysis_id, Analysis.user_id == user.id)
+        .first()
+    )
+    if not row or not row.storage_key:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    storage = get_storage()
+    try:
+        data = storage.get(row.storage_key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Image not found") from exc
+
+    ext = row.storage_key.rsplit(".", 1)[-1].lower()
+    media = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }.get(ext, "application/octet-stream")
+    return Response(content=data, media_type=media)
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)

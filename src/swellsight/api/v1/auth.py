@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
+from swellsight.api.v1.deps import get_current_user
 from swellsight.auth.security import create_access_token, hash_password, verify_password
 from swellsight.db.models import User
 from swellsight.db.session import get_db
@@ -45,5 +46,12 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_access_token({"sub": user.id, "email": user.email})
+    return TokenResponse(access_token=token)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(user: User = Depends(get_current_user)):
+    """Issue a new access token for an authenticated user (P3-T07)."""
     token = create_access_token({"sub": user.id, "email": user.email})
     return TokenResponse(access_token=token)

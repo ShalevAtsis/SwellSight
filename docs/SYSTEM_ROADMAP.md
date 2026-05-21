@@ -12,14 +12,14 @@
 
 | Phase | Done | Partial | Open | % complete |
 |-------|------|---------|------|------------|
-| **P0** Foundation | 6 | 0 | 1 | 86% (#6 tests) |
-| **P1** ML platform | 17 | 2 | 0 | ~94% |
-| **P2** MLOps | 6 | 0 | 1 | 86% (#30 DVC) |
-| **P3** Backend | 26 | 2 | 3 | ~87% |
-| **P4** Web UI | 11 | 2 | 4 | ~79% |
-| **P5** Production | 1 | 1 | 22 | ~8% |
+| **P0** Foundation | **7** | 0 | 0 | **100%** |
+| **P1** ML platform | **18** | 0 | 0 | **100%** |
+| **P2** MLOps | **7** | 0 | 0 | **100%** |
+| **P3** Backend | **28** | 0 | 1 | **97%** ([#61](https://github.com/ShalevAtsis/SwellSight/issues/61) backlog) |
+| **P4** Web UI | **14** | 0 | 1 | **93%** ([#74](https://github.com/ShalevAtsis/SwellSight/issues/74) i18n) |
+| **P5** Production | **10** | 1 | 13 | **~42%** |
 
-**Product path today:** Web → API → queue → worker → surf score works locally per [RUN_LOCALLY.md](RUN_LOCALLY.md). **Next focus:** P5 production (split Dockerfiles, full CI/CD, observability) + P4 polish (thumbnails, a11y, share).
+**Product path today:** [RUN_LOCALLY.md](RUN_LOCALLY.md) or `docker compose -f deploy/docker-compose.yml up`. Metrics at `/metrics`. **Next:** staging (#80), CD (#83–#84), Grafana (#93), TLS (#86).
 
 ---
 
@@ -455,7 +455,7 @@ flowchart LR
 | P3-T14 | ✅      | `GET /v1/analyses`               | History list ([#46](https://github.com/ShalevAtsis/SwellSight/issues/46)) |
 | P3-T15 | ✅      | `GET /v1/health`                 | DB + Redis + queue ([#47](https://github.com/ShalevAtsis/SwellSight/issues/47)) |
 | P3-T16 | ✅      | OpenAPI published                | `/docs` + `web/src/lib/api.ts` ([#48](https://github.com/ShalevAtsis/SwellSight/issues/48)) |
-| P3-T17 | ⏳      | Refactor existing `endpoints.py` | Legacy sync routes remain ([#49](https://github.com/ShalevAtsis/SwellSight/issues/49)) |
+| P3-T17 | ✅      | Refactor existing `endpoints.py` | `get_pipeline(Request)` from app.state ([#49](https://github.com/ShalevAtsis/SwellSight/issues/49)) |
 | P3-T18 | ✅      | Idempotency key on upload        | `Idempotency-Key` header ([#50](https://github.com/ShalevAtsis/SwellSight/issues/50)) |
 
 
@@ -500,7 +500,7 @@ flowchart LR
 | ------ | ------ | --------------------------------------- | ------------------------------------------------------ |
 | P4-T01 | ✅      | Create `web/` monorepo or separate repo | Next.js 14 `web/` ([#62](https://github.com/ShalevAtsis/SwellSight/issues/62)) |
 | P4-T02 | ✅      | Design system                           | Tailwind ocean/swell tokens ([#63](https://github.com/ShalevAtsis/SwellSight/issues/63)) |
-| P4-T03 | ~      | Auth pages                              | Login + register; forgot password TBD ([#64](https://github.com/ShalevAtsis/SwellSight/issues/64)) |
+| P4-T03 | ~      | Auth pages                              | Login + register + forgot-password info page ([#64](https://github.com/ShalevAtsis/SwellSight/issues/64)) |
 | P4-T04 | ✅      | API client from OpenAPI                 | `web/src/lib/api.ts` ([#65](https://github.com/ShalevAtsis/SwellSight/issues/65)) |
 
 
@@ -513,8 +513,8 @@ flowchart LR
 | P4-T06 | ✅      | Upload flow  | `UploadZone` + camera capture ([#67](https://github.com/ShalevAtsis/SwellSight/issues/67)) |
 | P4-T07 | ✅      | Progress UI  | `useAnalysisPoll` 2s ([#68](https://github.com/ShalevAtsis/SwellSight/issues/68)) |
 | P4-T08 | ✅      | Results page | Gauge + metrics + breakdown ([#69](https://github.com/ShalevAtsis/SwellSight/issues/69)) |
-| P4-T09 | ~      | History list | List without thumbnails ([#70](https://github.com/ShalevAtsis/SwellSight/issues/70)) |
-| P4-T10 | ~      | Error states | `ErrorAlert`, 429/400 messages ([#71](https://github.com/ShalevAtsis/SwellSight/issues/71)) |
+| P4-T09 | ✅      | History list | Thumbnails via `GET .../image` ([#70](https://github.com/ShalevAtsis/SwellSight/issues/70)) |
+| P4-T10 | ✅      | Error states | Failed/timeout copy + worker hint ([#71](https://github.com/ShalevAtsis/SwellSight/issues/71)) |
 
 
 #### P4.C — UX polish
@@ -523,7 +523,7 @@ flowchart LR
 | ID     | Status | Task                    | Details                               |
 | ------ | ------ | ----------------------- | ------------------------------------- |
 | P4-T11 | ✅      | Explain score breakdown | `ScoreBreakdownPanel` hints ([#72](https://github.com/ShalevAtsis/SwellSight/issues/72)) |
-| P4-T12 | ⏳      | Share result (optional) | Not implemented ([#73](https://github.com/ShalevAtsis/SwellSight/issues/73)) |
+| P4-T12 | ✅      | Share result (optional) | Copy result link button ([#73](https://github.com/ShalevAtsis/SwellSight/issues/73)) |
 | P4-T13 | 📋      | i18n backlog            | English only ([#74](https://github.com/ShalevAtsis/SwellSight/issues/74)) |
 | P4-T14 | ⏳      | Accessibility           | Basic keyboard on upload; audit TBD ([#75](https://github.com/ShalevAtsis/SwellSight/issues/75)) |
 
@@ -542,9 +542,9 @@ flowchart LR
 
 | ID     | Status | Task                 | Details                                 |
 | ------ | ------ | -------------------- | --------------------------------------- |
-| P5-T01 | ⏳      | `Dockerfile.api`     | Shared `Dockerfile` only ([#76](https://github.com/ShalevAtsis/SwellSight/issues/76)) |
-| P5-T02 | ⏳      | `Dockerfile.worker`  | Same ([#77](https://github.com/ShalevAtsis/SwellSight/issues/77)) |
-| P5-T03 | ~      | `docker-compose.yml` | `deploy/docker-compose.platform.yml` (no MinIO) ([#78](https://github.com/ShalevAtsis/SwellSight/issues/78)) |
+| P5-T01 | ✅      | `Dockerfile.api`     | `deploy/Dockerfile.api` ([#76](https://github.com/ShalevAtsis/SwellSight/issues/76)) |
+| P5-T02 | ✅      | `Dockerfile.worker`  | `deploy/Dockerfile.worker` ([#77](https://github.com/ShalevAtsis/SwellSight/issues/77)) |
+| P5-T03 | ✅      | `docker-compose.yml` | `deploy/docker-compose.yml` + MinIO ([#78](https://github.com/ShalevAtsis/SwellSight/issues/78)) |
 | P5-T04 | ✅      | Env config           | `.env.example`, [RUN_LOCALLY.md](RUN_LOCALLY.md) ([#79](https://github.com/ShalevAtsis/SwellSight/issues/79)) |
 | P5-T05 | ⏳      | Staging environment  | Not deployed ([#80](https://github.com/ShalevAtsis/SwellSight/issues/80)) |
 
@@ -554,7 +554,7 @@ flowchart LR
 
 | ID     | Status | Task                             | Details            |
 | ------ | ------ | -------------------------------- | ------------------ |
-| P5-T06 | ~      | CI: test + lint on PR            | `ci.yml` ([#81](https://github.com/ShalevAtsis/SwellSight/issues/81)) |
+| P5-T06 | ✅      | CI: test + lint on PR            | `ci.yml` + platform integration tests ([#81](https://github.com/ShalevAtsis/SwellSight/issues/81)) |
 | P5-T07 | ⏳      | CI: build images on main         | ([#82](https://github.com/ShalevAtsis/SwellSight/issues/82)) |
 | P5-T08 | ⏳      | CD: deploy staging auto          | ([#83](https://github.com/ShalevAtsis/SwellSight/issues/83)) |
 | P5-T09 | ⏳      | CD: deploy prod manual approve   | ([#84](https://github.com/ShalevAtsis/SwellSight/issues/84)) |
@@ -582,7 +582,7 @@ flowchart LR
 | P5-T17 | ⏳      | Metrics            | ([#92](https://github.com/ShalevAtsis/SwellSight/issues/92)) |
 | P5-T18 | ⏳      | Dashboards         | ([#93](https://github.com/ShalevAtsis/SwellSight/issues/93)) |
 | P5-T19 | ⏳      | Alerts             | ([#94](https://github.com/ShalevAtsis/SwellSight/issues/94)) |
-| P5-T20 | ~      | Runbooks           | [PLATFORM.md](ops/PLATFORM.md); full RUNBOOK TBD ([#95](https://github.com/ShalevAtsis/SwellSight/issues/95)) |
+| P5-T20 | ✅      | Runbooks           | [RUNBOOK.md](ops/RUNBOOK.md) ([#95](https://github.com/ShalevAtsis/SwellSight/issues/95)) |
 
 
 #### P5.E — Scale & cost (post-launch)
@@ -754,12 +754,12 @@ Re-create issues (if needed): `python scripts/create_roadmap_issues.py`
 
 ## Next action (immediate)
 
-1. **Run locally:** [RUN_LOCALLY.md](RUN_LOCALLY.md) — web + API + worker smoke test.
-2. **P0:** Close the loop on [#6 — test collection](https://github.com/ShalevAtsis/SwellSight/issues/6).
-3. **P4 polish:** [#70](https://github.com/ShalevAtsis/SwellSight/issues/70) thumbnails, [#64](https://github.com/ShalevAtsis/SwellSight/issues/64) forgot-password, [#73–#75](https://github.com/ShalevAtsis/SwellSight/issues/73).
-4. **P5:** Start [#76–#78](https://github.com/ShalevAtsis/SwellSight/issues/76) split Dockerfiles + full compose; extend [#81](https://github.com/ShalevAtsis/SwellSight/issues/81) CI.
+1. **Smoke test:** `docker compose -f deploy/docker-compose.yml up --build` — see [RUNBOOK.md](ops/RUNBOOK.md).
+2. **P5 staging:** [#80](https://github.com/ShalevAtsis/SwellSight/issues/80) deploy to Railway/Render + GPU worker host.
+3. **P5 CD:** [#83](https://github.com/ShalevAtsis/SwellSight/issues/83)–[#84](https://github.com/ShalevAtsis/SwellSight/issues/84) automated deploy pipelines.
+4. **P5 observability:** [#93](https://github.com/ShalevAtsis/SwellSight/issues/93) Grafana dashboards wired to `/metrics`.
 
-**Work order:** P0 test debt → P4 polish + staging demo → **P5 production**.
+**Work order:** Staging E2E → production CD → observability & compliance polish.
 
 ---
 

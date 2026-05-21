@@ -1,0 +1,105 @@
+# Full local/production-like stack — P5-T03
+# Usage: docker compose -f deploy/docker-compose.yml up --build
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: swellsight
+      POSTGRES_PASSWORD: swellsight
+      POSTGRES_DB: swellsight
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swellsight"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: dev-secret-change-in-prod
+      SWELLSIGHT_SKIP_MODEL_SERVER: "1"
+      CORS_ORIGINS: http://localhost:3000
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_ROOT: /app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/data/uploads
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_ROOT: /app/data/uploads
+      SWELLSIGHT_CHECKPOINT: /app/checkpoints/best_model.pth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/data/uploads
+      - ../checkpoints:/app/checkpoints:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+psycopg2://swellsight:swellsight@postgres:5432/swellsight
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  uploads:

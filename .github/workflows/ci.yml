@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,platform,inference]"
           pip install -r requirements/base.txt
 
       - name: Verify package import
@@ -37,6 +37,11 @@ jobs:
           pytest tests/ -q --tb=short -m "not gpu and not slow" \
             --no-cov -x --ignore=tests/unit/test_synthetic_generator.py \
             --ignore=tests/integration/test_pipeline.py
+
+      - name: Platform API integration tests
+        env:
+          PYTHONPATH: src
+        run: pytest tests/integration/test_platform_api.py -q --tb=short
 
       - name: Validate data layout script
         run: python scripts/validate_data_layout.py --create-missing

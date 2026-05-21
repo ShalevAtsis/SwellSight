@@ -58,6 +58,7 @@ inference = [
     "aiofiles>=23.0.0",
 ]
 platform = [
+    "psutil>=5.9.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.12.0",
     "psycopg2-binary>=2.9.0",

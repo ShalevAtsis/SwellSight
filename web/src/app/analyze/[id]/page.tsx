@@ -7,6 +7,7 @@ import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { ScoreBreakdownPanel } from "@/components/analysis/ScoreBreakdown";
 import { SurfScoreGauge } from "@/components/analysis/SurfScoreGauge";
 import { WaveMetricsCard } from "@/components/analysis/WaveMetricsCard";
+import { ShareResultButton } from "@/components/analysis/ShareResultButton";
 import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useAnalysisPoll } from "@/hooks/useAnalysisPoll";
@@ -38,8 +39,13 @@ export default function AnalysisDetailPage() {
           <>
             <AnalysisProgress status={analysis.status} />
 
-            {analysis.status === "failed" && analysis.error_message && (
-              <ErrorAlert message={analysis.error_message} />
+            {analysis.status === "failed" && (
+              <ErrorAlert
+                message={
+                  analysis.error_message ||
+                  "Analysis failed. Try another photo or check that the worker is running."
+                }
+              />
             )}
 
             {analysis.status === "completed" && (
@@ -65,13 +71,18 @@ export default function AnalysisDetailPage() {
                     Model: {analysis.model_version}
                   </p>
                 )}
+                {id && <ShareResultButton analysisId={id} />}
               </div>
             )}
 
             {!["completed", "failed"].includes(analysis.status) && polling && (
-              <p className="text-sm text-foam-500 text-center">
-                Checking every 2 seconds…
-              </p>
+              <div className="text-sm text-foam-500 text-center space-y-2">
+                <p>Checking every 2 seconds…</p>
+                <p className="text-xs text-foam-600">
+                  If this takes more than a few minutes, ensure the GPU worker is
+                  running and a checkpoint is configured.
+                </p>
+              </div>
             )}
           </>
         )}

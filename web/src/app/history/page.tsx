@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { ErrorAlert } from "@/components/ui/ErrorAlert";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { AnalysisThumbnail } from "@/components/analysis/AnalysisThumbnail";
 import * as api from "@/lib/api";
 import type { Analysis } from "@/lib/types";
 
@@ -66,12 +67,12 @@ export default function HistoryPage() {
               <li key={a.id}>
                 <Link
                   href={`/analyze/${a.id}`}
-                  className="flex items-center justify-between rounded-xl border border-ocean-800 bg-ocean-900/40 px-4 py-3 hover:border-swell-500/40 transition"
+                  className="flex items-center gap-4 justify-between rounded-xl border border-ocean-800 bg-ocean-900/40 px-4 py-3 hover:border-swell-500/40 transition"
                 >
-                  <div>
-                    <p className="font-mono text-xs text-foam-600 truncate max-w-[200px] sm:max-w-none">
-                      {a.id}
-                    </p>
+                  {token && (
+                    <AnalysisThumbnail analysisId={a.id} token={token} />
+                  )}
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm text-foam-400">
                       {a.created_at
                         ? new Date(a.created_at).toLocaleString()

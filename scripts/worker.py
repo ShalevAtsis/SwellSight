@@ -86,7 +86,12 @@ def process_job(job: AnalysisJob, runner: BatchInferenceRunner, scorer: SurfScor
         row.model_version = model_version
         row.completed_at = datetime.now(timezone.utc)
         db.commit()
-        logger.info("Completed analysis %s score=%s", job.analysis_id, surf_score)
+        logger.info(
+            "Completed analysis %s score=%s correlation_id=%s",
+            job.analysis_id,
+            surf_score,
+            job.correlation_id or job.analysis_id,
+        )
         return True
     except Exception as exc:
         logger.exception("Job failed: %s", exc)

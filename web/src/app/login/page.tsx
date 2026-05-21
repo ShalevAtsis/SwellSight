@@ -15,6 +15,10 @@ export default function LoginPage() {
         <Link href="/register" className="text-swell-400 hover:underline">
           Create an account
         </Link>
+        {" · "}
+        <Link href="/forgot-password" className="text-swell-400 hover:underline">
+          Forgot password?
+        </Link>
       </p>
       <div className="mt-8">
         <AuthForm mode="login" onSubmit={login} />

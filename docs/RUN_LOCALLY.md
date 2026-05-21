@@ -132,7 +132,13 @@ $env:STORAGE_LOCAL_ROOT = "data\uploads"
 From the repo root:
 
 ```powershell
+# Lightweight (Postgres + Redis only)
 docker compose -f deploy/docker-compose.platform.yml up -d postgres redis
+
+# Full stack (API + worker + MinIO) — see docs/ops/RUNBOOK.md
+# docker compose -f deploy/docker-compose.yml build
+# docker compose -f deploy/docker-compose.yml run --rm migrate
+# docker compose -f deploy/docker-compose.yml up -d
 ```
 
 Wait until both are healthy:
@@ -150,7 +156,14 @@ You should see `postgres` and `redis` running.
 With the venv activated and `DATABASE_URL` set:
 
 ```powershell
+$env:DATABASE_URL = "postgresql+psycopg2://swellsight:swellsight@localhost:5432/swellsight"
 python -m alembic upgrade head
+```
+
+If you see `ModuleNotFoundError: psutil`, install platform deps:
+
+```powershell
+python -m pip install -e ".[platform,inference]"
 ```
 
 If that fails, try:

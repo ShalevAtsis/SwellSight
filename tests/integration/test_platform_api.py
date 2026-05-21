@@ -47,6 +47,22 @@ def test_register_and_login(client):
     assert token
 
 
+def test_refresh_token(client):
+    token = _register(client, "refresh@example.com")
+    r = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["access_token"]
+
+
+def test_metrics_endpoint(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "swellsight_http_requests_total" in r.text
+
+
 def test_register_rejects_short_password(client):
     r = client.post(
         "/api/v1/auth/register",
@@ -105,6 +121,17 @@ def test_rejects_invalid_upload(client):
         files={"file": ("x.txt", b"not an image", "text/plain")},
     )
     assert r.status_code == 400
+
+
+def test_get_analysis_image(client, mock_queue):
+    token = _register(client, "img@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    files = {"file": ("cam.jpg", _tiny_jpeg(), "image/jpeg")}
+    created = client.post("/api/v1/analyses", headers=headers, files=files)
+    aid = created.json()["id"]
+    r = client.get(f"/api/v1/analyses/{aid}/image", headers=headers)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/")
 
 
 def test_list_analyses(client):

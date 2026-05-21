@@ -5,7 +5,7 @@ Provides REST endpoints for image analysis, batch processing,
 and system status monitoring.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Request
 from fastapi.responses import JSONResponse
 import numpy as np
 from PIL import Image
@@ -56,27 +56,13 @@ def _get_pipeline_singleton() -> WaveAnalysisPipeline:
     """Get or create singleton pipeline instance."""
     return WaveAnalysisPipeline()
 
-def get_pipeline() -> WaveAnalysisPipeline:
-    """Dependency to get pipeline instance."""
-    from fastapi import Request
-    from starlette.requests import Request as StarletteRequest
-    import inspect
-    
-    # Get the current request context to access app state
-    frame = inspect.currentframe()
-    try:
-        while frame:
-            if 'request' in frame.f_locals and hasattr(frame.f_locals['request'], 'app'):
-                request = frame.f_locals['request']
-                if hasattr(request.app.state, 'pipeline'):
-                    return request.app.state.pipeline
-            frame = frame.f_back
-    finally:
-        del frame
-    
-    # Fallback: create new pipeline instance if not found in app state
-    logger.warning("Pipeline not found in app state, creating new instance")
-    return WaveAnalysisPipeline()
+def get_pipeline(request: Request) -> WaveAnalysisPipeline:
+    """Dependency: pipeline from app.state (set in server lifespan)."""
+    pipeline = getattr(request.app.state, "pipeline", None)
+    if pipeline is not None:
+        return pipeline
+    logger.warning("Pipeline not in app.state; creating standalone instance (dev only)")
+    return _get_pipeline_singleton()
 
 @router.post("/analyze", response_model=WaveAnalysisResponse)
 async def analyze_wave_image(

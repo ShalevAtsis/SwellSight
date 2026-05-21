@@ -1,0 +1,35 @@
+# Slim API image (CPU, no GPU) — P5-T01
+# Build: docker build -f deploy/Dockerfile.api -t swellsight-api .
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src \
+    SWELLSIGHT_SKIP_MODEL_SERVER=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY requirements/ requirements/
+COPY src/ src/
+COPY alembic/ alembic/
+COPY alembic.ini ./
+
+RUN pip install --upgrade pip \
+    && pip install -e ".[platform,inference]"
+
+RUN mkdir -p data/uploads && useradd --create-home swellsight \
+    && chown -R swellsight:swellsight /app
+USER swellsight
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/live')" || exit 1
+
+CMD ["python", "-m", "uvicorn", "swellsight.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
