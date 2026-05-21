@@ -40,9 +40,11 @@ This will tell you:
 - ✗ What's missing
 - 💡 What to do next
 
-### Step 3: Follow the Training Guide 📖
+### Step 3: Follow the Model & Training Guides 📖
 
-**Main Guide**: [docs/TRAINING_FROM_SCRATCH.md](docs/TRAINING_FROM_SCRATCH.md)
+**Model commands & requirements**: [docs/MODEL_GUIDE.md](MODEL_GUIDE.md) ⭐  
+**Full product plan (API, UI, DB, deploy)**: [docs/SYSTEM_ROADMAP.md](SYSTEM_ROADMAP.md)  
+**Full data pipeline (depth, FLUX, augment)**: [docs/TRAINING_FROM_SCRATCH.md](TRAINING_FROM_SCRATCH.md)
 
 This comprehensive guide walks you through:
 
@@ -72,7 +74,7 @@ This comprehensive guide walks you through:
    
 7. **Model Training** (8-24 hours) ⏰⏰
    - Train multi-task wave analyzer
-   - `python scripts/train_model.py`
+   - `python scripts/train.py` (or `swellsight train`)
    
 8. **Model Evaluation** (1 hour)
    - Validate performance

@@ -13,13 +13,7 @@ import numpy as np
 import hypothesis.strategies as st
 from hypothesis import given, settings, assume
 import cv2
-from pathlib import Path
-import sys
-
-# Add utils to path
-sys.path.append(str(Path(__file__).parent / 'utils'))
-
-from data_validator import validate_depth_map_quality
+from utils.data_validator import validate_depth_map_quality
 
 
 def generate_synthetic_depth_map(width: int, height: int, pattern: str = 'gradient') -> np.ndarray:

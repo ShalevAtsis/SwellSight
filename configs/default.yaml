@@ -39,7 +39,7 @@ system:
 
 paths:
   data_dir: "data"
-  models_dir: "data/models"
+  models_dir: "checkpoints"
   checkpoints_dir: "checkpoints"
   logs_dir: "logs"
-  evaluation_dir: "evaluation"
+  evaluation_dir: "evaluation_reports"

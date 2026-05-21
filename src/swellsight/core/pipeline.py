@@ -55,6 +55,8 @@ class PipelineConfig:
     # Output configuration
     save_intermediate_results: bool = False
     output_directory: Optional[str] = None
+    wave_checkpoint_path: Optional[str] = None
+    num_classes_breaking: int = 3
     
     def validate(self) -> None:
         """Validate configuration parameters."""
@@ -191,9 +193,22 @@ class WaveAnalysisPipeline:
             self.wave_analyzer = DINOv2WaveAnalyzer(
                 backbone_model=self.config.wave_backbone_model,
                 freeze_backbone=self.config.freeze_backbone,
+                num_classes_breaking=self.config.num_classes_breaking,
                 enable_optimization=self.config.enable_optimization,
                 confidence_calibration_method=self.config.confidence_calibration_method
             )
+
+            if self.config.wave_checkpoint_path:
+                from ..models.wave_model import load_checkpoint_into_model
+                import torch
+
+                path = Path(self.config.wave_checkpoint_path)
+                if path.exists():
+                    device = getattr(self.wave_analyzer, "device", torch.device("cpu"))
+                    load_checkpoint_into_model(self.wave_analyzer, str(path), device=device)
+                    self.logger.info("Loaded wave analyzer weights from %s", path)
+                else:
+                    self.logger.warning("Wave checkpoint not found: %s", path)
             
             self.logger.info("Pipeline components initialized successfully")
             

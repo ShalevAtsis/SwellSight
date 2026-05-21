@@ -1018,6 +1018,8 @@ python scripts/create_monitoring_dashboard.py
 ### Quick Links
 
 - **[Start Here](docs/START_HERE.md)** - First-time setup guide
+- **[System Roadmap](docs/SYSTEM_ROADMAP.md)** - Full product plan: AI → API → UI → production
+- **[Model Guide](docs/MODEL_GUIDE.md)** - Requirements, train, inference, checkpoints
 - **[Training Guide](docs/TRAINING_FROM_SCRATCH.md)** - Complete training workflow
 - **[User Guide](docs/USER_GUIDE.md)** - Detailed usage instructions
 - **[Inference Guide](docs/INFERENCE_GUIDE.md)** - Running predictions

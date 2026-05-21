@@ -36,7 +36,11 @@ class WaveAnalysisTrainer:
             self.num_epochs = train_conf.num_epochs
             self.weight_decay = train_conf.weight_decay
             self.optimizer_name = 'AdamW'
-            self.save_dir = Path(log_conf.output_dir) / 'checkpoints'
+            checkpoints = getattr(config, 'paths', None)
+            if checkpoints is not None:
+                self.save_dir = Path(checkpoints.checkpoints_dir)
+            else:
+                self.save_dir = Path(log_conf.output_dir) / 'checkpoints'
             self.save_frequency = train_conf.save_checkpoint_every
             
             # Loss weights
@@ -162,7 +166,16 @@ class WaveAnalysisTrainer:
             
             # 3. Forward Pass
             with torch.set_grad_enabled(is_training):
-                outputs = self.model(inputs)
+                if hasattr(self.model, "forward_training"):
+                    outputs = self.model.forward_training(inputs)
+                else:
+                    outputs = self.model(inputs)
+                    if "height_meters" in outputs:
+                        outputs = {
+                            "height": outputs["height_meters"].view(-1, 1),
+                            "direction": outputs["direction_logits"],
+                            "breaking_type": outputs["breaking_logits"],
+                        }
                 
                 # 4. Calculate Losses
                 loss_h = self.height_loss(outputs['height'], h_target)

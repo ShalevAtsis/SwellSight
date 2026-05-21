@@ -1,124 +1,164 @@
 #!/usr/bin/env python3
-"""
-Inference script for SwellSight Wave Analysis System.
+"""Run wave analysis inference on beach cam images."""
 
-Provides command-line interface for running wave analysis inference
-on individual images or batches.
-"""
+from __future__ import annotations
 
 import argparse
-import logging
-from pathlib import Path
-import sys
 import json
+import logging
+import sys
+from dataclasses import asdict
+from pathlib import Path
+from typing import Optional
 
-# Add src to path for imports
+import cv2
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from swellsight.utils.config import ConfigManager
+from swellsight.core.pipeline import PipelineConfig, WaveAnalysisPipeline
+from swellsight.utils.config import ConfigManager, load_yaml_dict
 from swellsight.utils.logging import setup_logging
-from swellsight.core.pipeline import WaveAnalysisPipeline
-from swellsight.utils.io import FileManager
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Run SwellSight Wave Analysis Inference"
-    )
-    
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SwellSight wave analysis inference")
+    parser.add_argument("--config", default="configs/inference.yaml", help="Config YAML path")
+    parser.add_argument("--input", required=True, help="Image file or directory")
+    parser.add_argument("--output", default="outputs/inference", help="Output directory")
     parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/inference.yaml",
-        help="Path to inference configuration file"
-    )
-    
-    parser.add_argument(
-        "--input",
-        type=str,
-        required=True,
-        help="Path to input image or directory of images"
-    )
-    
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="outputs/inference",
-        help="Path to output directory for results"
-    )
-    
-    parser.add_argument(
-        "--model-path",
-        type=str,
+        "--checkpoint",
         default=None,
-        help="Path to trained model checkpoint (optional)"
+        help="Trained wave model checkpoint (e.g. checkpoints/best_model.pth)",
     )
-    
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=1,
-        help="Batch size for processing multiple images"
-    )
-    
-    parser.add_argument(
-        "--save-visualizations",
-        action="store_true",
-        help="Save visualization images with results"
-    )
-    
-    parser.add_argument(
-        "--gpu",
-        type=int,
-        default=None,
-        help="GPU device ID to use (default: auto-detect)"
-    )
-    
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
-    
+    parser.add_argument("--save-visualizations", action="store_true")
+    parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
-def main():
-    """Main inference function."""
+
+def _pipeline_config_from_yaml(yaml_path: str, checkpoint: Optional[str]) -> PipelineConfig:
+    raw = load_yaml_dict(yaml_path)
+    model = raw.get("model", {})
+    system = raw.get("system", {})
+    paths = raw.get("paths", {})
+    if checkpoint:
+        ckpt = checkpoint
+    else:
+        ckpt = paths.get("checkpoints_dir", "checkpoints")
+        ckpt_path = Path(ckpt)
+        if ckpt_path.is_dir():
+            ckpt = str(ckpt_path / "best_model.pth")
+        elif not str(ckpt).endswith(".pth"):
+            ckpt = str(ckpt_path / "best_model.pth")
+    backbone = model.get("backbone_model", "dinov2-base")
+    backbone_map = {
+        "dinov2-base": "dinov2_vitb14",
+        "dinov2-small": "dinov2_vits14",
+        "dinov2-large": "dinov2_vitl14",
+    }
+    return PipelineConfig(
+        depth_model_size=model.get("depth_model_size", "base"),
+        depth_precision=model.get("depth_precision", "fp16"),
+        wave_backbone_model=backbone_map.get(backbone, backbone),
+        freeze_backbone=model.get("freeze_backbone", True),
+        use_gpu=system.get("use_gpu", True),
+        max_processing_time=system.get("max_processing_time", 30.0),
+        confidence_threshold=system.get("confidence_threshold", 0.7),
+        wave_checkpoint_path=ckpt if ckpt and Path(ckpt).exists() else None,
+        output_directory=None,
+        save_intermediate_results=False,
+        num_classes_breaking=model.get("num_classes_breaking", 3),
+    )
+
+
+def _collect_images(path: Path) -> list[Path]:
+    if path.is_file():
+        return [path]
+    return sorted(
+        p for p in path.iterdir() if p.suffix.lower() in IMAGE_EXTENSIONS
+    )
+
+
+def _load_rgb(image_path: Path) -> np.ndarray:
+    image_bgr = cv2.imread(str(image_path))
+    if image_bgr is None:
+        raise ValueError(f"Could not read image: {image_path}")
+    return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+
+def _result_to_json(result) -> dict:
+    metrics = result.wave_metrics
+    return {
+        "wave_height_meters": round(metrics.height_meters, 3),
+        "wave_height_feet": round(metrics.height_feet, 2),
+        "direction": metrics.direction,
+        "direction_confidence": round(metrics.direction_confidence, 4),
+        "breaking_type": metrics.breaking_type,
+        "breaking_confidence": round(metrics.breaking_confidence, 4),
+        "overall_confidence": round(result.pipeline_confidence, 4),
+        "processing_time_seconds": round(result.processing_time, 3),
+        "extreme_conditions": metrics.extreme_conditions,
+        "warnings": result.warnings,
+    }
+
+
+def main() -> int:
     args = parse_args()
-    
-    # Setup logging
-    log_level = "DEBUG" if args.debug else "INFO"
-    setup_logging(log_level=log_level)
+    setup_logging(level="DEBUG" if args.debug else "INFO")
     logger = logging.getLogger("swellsight.inference")
-    
-    logger.info("Starting SwellSight inference...")
-    logger.info(f"Config: {args.config}")
-    logger.info(f"Input: {args.input}")
-    logger.info(f"Output: {args.output}")
-    
-    try:
-        # Load configuration
-        config_manager = ConfigManager(args.config)
-        config = config_manager.get_config()
-        
-        # Validate configuration
-        if not config_manager.validate_config():
-            logger.error("Configuration validation failed")
-            return 1
-        
-        # TODO: Implement inference pipeline in task 13.1
-        logger.info("Inference pipeline will be implemented in task 13.1")
-        
-        # Create output directory
-        output_dir = Path(args.output)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info("Inference completed successfully")
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Inference failed: {e}")
+
+    input_path = Path(args.input)
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not input_path.exists():
+        logger.error("Input not found: %s", input_path)
         return 1
+
+    ConfigManager(args.config)
+    pipeline_config = _pipeline_config_from_yaml(args.config, args.checkpoint)
+    pipeline = WaveAnalysisPipeline(config=pipeline_config)
+
+    images = _collect_images(input_path)
+    if not images:
+        logger.error("No images found at %s", input_path)
+        return 1
+
+    logger.info("Processing %s image(s)...", len(images))
+    all_results = {}
+
+    for image_path in images:
+        try:
+            rgb = _load_rgb(image_path)
+            result = pipeline.process_beach_cam_image(rgb)
+            payload = _result_to_json(result)
+            all_results[image_path.name] = payload
+
+            out_file = output_dir / f"{image_path.stem}_analysis.json"
+            with open(out_file, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+
+            logger.info(
+                "%s -> %.2fm, %s, %s (conf %.0f%%)",
+                image_path.name,
+                payload["wave_height_meters"],
+                payload["direction"],
+                payload["breaking_type"],
+                payload["overall_confidence"] * 100,
+            )
+        except Exception as exc:
+            logger.error("Failed on %s: %s", image_path, exc, exc_info=args.debug)
+            all_results[image_path.name] = {"error": str(exc)}
+
+    summary_path = output_dir / "summary.json"
+    with open(summary_path, "w", encoding="utf-8") as handle:
+        json.dump(all_results, handle, indent=2)
+
+    logger.info("Results saved to %s", output_dir)
+    return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

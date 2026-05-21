@@ -1,112 +1,114 @@
 """
-Command-line interface for SwellSight Wave Analysis System.
+Command-line interface for SwellSight.
 
-Provides a unified CLI for training, evaluation, and inference operations.
+Delegates to the maintained scripts under ``scripts/``.
 """
 
-import click
+from __future__ import annotations
+
+import subprocess
 import sys
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import click
 
 from swellsight.utils.logging import setup_logging
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+
+
+def _run_script(script_name: str, extra_args: list[str]) -> int:
+    script = SCRIPTS_DIR / script_name
+    if not script.exists():
+        click.echo(f"Script not found: {script}", err=True)
+        return 1
+    cmd = [sys.executable, str(script), *extra_args]
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    return int(result.returncode)
+
+
 @click.group()
-@click.option('--debug', is_flag=True, help='Enable debug logging')
-@click.option('--config', type=str, help='Configuration file path')
+@click.option("--debug", is_flag=True, help="Enable debug logging")
 @click.pass_context
-def cli(ctx, debug, config):
-    """SwellSight Wave Analysis System CLI."""
-    # Setup logging
-    log_level = "DEBUG" if debug else "INFO"
-    setup_logging(log_level=log_level)
-    
-    # Store context
+def cli(ctx, debug: bool):
+    """SwellSight wave analysis — train, evaluate, and run inference."""
+    setup_logging(log_level="DEBUG" if debug else "INFO")
     ctx.ensure_object(dict)
-    ctx.obj['debug'] = debug
-    ctx.obj['config'] = config
+    ctx.obj["debug"] = debug
 
-@cli.command()
-@click.option('--data-dir', type=str, default='data', help='Training data directory')
-@click.option('--output-dir', type=str, default='outputs/training', help='Output directory')
-@click.option('--resume', type=str, help='Resume from checkpoint')
-@click.option('--gpu', type=int, help='GPU device ID')
+
+@cli.command("train")
+@click.option("--config", default="configs/training.yaml", show_default=True)
+@click.option("--data-dir", default="data", show_default=True)
+@click.option("--output-dir", default="outputs/training", show_default=True)
+@click.option("--resume", default=None, help="Checkpoint path to resume from")
+@click.option("--gpu", type=int, default=None)
 @click.pass_context
-def train(ctx, data_dir, output_dir, resume, gpu):
-    """Train wave analysis model."""
-    click.echo("🌊 Starting SwellSight training...")
-    
-    config_path = ctx.obj.get('config', 'configs/training.yaml')
-    click.echo(f"Config: {config_path}")
-    click.echo(f"Data: {data_dir}")
-    click.echo(f"Output: {output_dir}")
-    
-    # TODO: Implement training in task 7.1
-    click.echo("Training pipeline will be implemented in task 7.1")
+def train_cmd(ctx, config, data_dir, output_dir, resume, gpu):
+    """Train the wave analysis model."""
+    args = ["--config", config, "--data-dir", data_dir, "--output-dir", output_dir]
+    if resume:
+        args.extend(["--resume", resume])
+    if gpu is not None:
+        args.extend(["--gpu", str(gpu)])
+    if ctx.obj.get("debug"):
+        args.append("--debug")
+    sys.exit(_run_script("train.py", args))
 
-@cli.command()
-@click.option('--model-path', type=str, required=True, help='Trained model path')
-@click.option('--test-data', type=str, required=True, help='Test dataset path')
-@click.option('--output-dir', type=str, default='outputs/evaluation', help='Output directory')
-@click.option('--benchmark', is_flag=True, help='Include performance benchmarking')
+
+@cli.command("evaluate")
+@click.option("--config", default="configs/evaluation.yaml", show_default=True)
+@click.option("--model-path", required=True, help="Checkpoint (.pth)")
+@click.option("--test-data", required=True, help="Dataset directory")
+@click.option("--output-dir", default="outputs/evaluation", show_default=True)
 @click.pass_context
-def evaluate(ctx, model_path, test_data, output_dir, benchmark):
-    """Evaluate trained model."""
-    click.echo("📊 Starting SwellSight evaluation...")
-    
-    config_path = ctx.obj.get('config', 'configs/evaluation.yaml')
-    click.echo(f"Config: {config_path}")
-    click.echo(f"Model: {model_path}")
-    click.echo(f"Test data: {test_data}")
-    
-    # TODO: Implement evaluation in task 11.1
-    click.echo("Evaluation pipeline will be implemented in task 11.1")
+def evaluate_cmd(ctx, config, model_path, test_data, output_dir):
+    """Evaluate a trained checkpoint on labeled data."""
+    args = [
+        "--config", config,
+        "--model-path", model_path,
+        "--test-data", test_data,
+        "--output-dir", output_dir,
+    ]
+    if ctx.obj.get("debug"):
+        args.append("--debug")
+    sys.exit(_run_script("evaluate.py", args))
 
-@cli.command()
-@click.option('--input', type=str, required=True, help='Input image or directory')
-@click.option('--output', type=str, default='outputs/inference', help='Output directory')
-@click.option('--model-path', type=str, help='Model checkpoint path')
-@click.option('--batch-size', type=int, default=1, help='Batch size')
+
+@cli.command("analyze")
+@click.option("--config", default="configs/inference.yaml", show_default=True)
+@click.option("--input", required=True, help="Image file or directory")
+@click.option("--output", default="outputs/inference", show_default=True)
+@click.option("--checkpoint", default=None, help="Wave model checkpoint (.pth)")
 @click.pass_context
-def analyze(ctx, input, output, model_path, batch_size):
-    """Analyze wave conditions from images."""
-    click.echo("🔍 Starting SwellSight analysis...")
-    
-    config_path = ctx.obj.get('config', 'configs/inference.yaml')
-    click.echo(f"Config: {config_path}")
-    click.echo(f"Input: {input}")
-    click.echo(f"Output: {output}")
-    
-    # TODO: Implement inference in task 13.1
-    click.echo("Inference pipeline will be implemented in task 13.1")
+def analyze_cmd(ctx, config, input, output, checkpoint):
+    """Analyze beach cam images (depth + wave metrics)."""
+    args = ["--config", config, "--input", input, "--output", output]
+    if checkpoint:
+        args.extend(["--checkpoint", checkpoint])
+    if ctx.obj.get("debug"):
+        args.append("--debug")
+    sys.exit(_run_script("inference.py", args))
 
-@cli.command()
-@click.option('--host', type=str, default='0.0.0.0', help='Server host')
-@click.option('--port', type=int, default=8000, help='Server port')
-@click.option('--workers', type=int, default=1, help='Number of workers')
-@click.pass_context
-def serve(ctx, host, port, workers):
-    """Start API server."""
-    click.echo("🚀 Starting SwellSight API server...")
-    
-    config_path = ctx.obj.get('config', 'configs/inference.yaml')
-    click.echo(f"Config: {config_path}")
-    click.echo(f"Server: {host}:{port}")
-    
-    # TODO: Implement API server in task 14.1
-    click.echo("API server will be implemented in task 14.1")
 
-@cli.command()
-def version():
-    """Show version information."""
-    from swellsight import __version__
-    click.echo(f"SwellSight Wave Analysis System v{__version__}")
+@cli.command("serve")
+@click.option("--host", default="0.0.0.0", show_default=True)
+@click.option("--port", default=8000, show_default=True)
+def serve_cmd(host, port):
+    """Start the REST API server."""
+    sys.exit(_run_script("start_api.py", ["--host", host, "--port", str(port)]))
+
+
+@cli.command("check")
+def check_cmd():
+    """Verify system readiness for training."""
+    sys.exit(_run_script("check_training_readiness.py", []))
+
 
 def main():
-    """Main CLI entry point."""
-    cli()
+    cli(obj={})
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

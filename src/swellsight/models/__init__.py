@@ -8,11 +8,14 @@ for the multi-task wave analysis system.
 from .backbone import DINOv2Backbone
 from .heads import WaveHeightHead, DirectionHead, BreakingTypeHead
 from .losses import MultiTaskLoss
+from .wave_model import WaveAnalysisModel, load_checkpoint_into_model
 
 __all__ = [
     "DINOv2Backbone",
     "WaveHeightHead", 
     "DirectionHead",
     "BreakingTypeHead",
-    "MultiTaskLoss"
+    "MultiTaskLoss",
+    "WaveAnalysisModel",
+    "load_checkpoint_into_model",
 ]

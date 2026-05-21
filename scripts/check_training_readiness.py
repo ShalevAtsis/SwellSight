@@ -170,10 +170,10 @@ def check_data_availability():
 
 def check_training_config():
     """Check if training configuration exists."""
-    config_path = Path('configs/training_config.yaml')
+    config_path = Path('configs/training.yaml')
     
     is_ok = config_path.exists()
-    details = "Configuration file found" if is_ok else "Configuration file missing"
+    details = "configs/training.yaml found" if is_ok else "configs/training.yaml missing"
     
     return is_ok, details
 
@@ -247,8 +247,9 @@ def main():
     if system_ready and data_ready:
         print("\n✅ Your system is READY for training!")
         print("\nNext steps:")
-        print("  1. Review training configuration: configs/training_config.yaml")
-        print("  2. Start training: python scripts/train_model.py")
+        print("  1. Review training configuration: configs/training.yaml")
+        print("  2. Start training: python scripts/train.py")
+        print("     Or: swellsight train")
         print("  3. Monitor progress in outputs/logs/")
     elif system_ready and not data_ready:
         print("\n⚠️  System is ready, but data preparation needed!")

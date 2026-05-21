@@ -72,7 +72,8 @@ class WaveAnalyzer(ABC):
 class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
     """DINOv2-based multi-task wave analyzer."""
     
-    def __init__(self, backbone_model: str = "dinov2_vitb14", freeze_backbone: bool = True, 
+    def __init__(self, backbone_model: str = "dinov2_vitb14", freeze_backbone: bool = True,
+                 num_classes_direction: int = 3, num_classes_breaking: int = 3,
                  device: Optional[str] = None, enable_optimization: bool = True,
                  confidence_calibration_method: str = "isotonic"):
         """Initialize DINOv2 wave analyzer.
@@ -125,8 +126,8 @@ class DINOv2WaveAnalyzer(WaveAnalyzer, nn.Module):
         # Initialize prediction heads
         feature_dim = self.backbone.get_feature_dim()
         self.height_head = WaveHeightHead(feature_dim)
-        self.direction_head = DirectionHead(feature_dim)
-        self.breaking_head = BreakingTypeHead(feature_dim)
+        self.direction_head = DirectionHead(feature_dim, num_classes=num_classes_direction)
+        self.breaking_head = BreakingTypeHead(feature_dim, num_classes=num_classes_breaking)
         
         # Move model to device with memory optimization
         self._move_to_device_with_fallback()

@@ -76,9 +76,6 @@ Documentation = "https://swellsight.readthedocs.io"
 
 [project.scripts]
 swellsight = "swellsight.cli:main"
-swellsight-train = "scripts.train:main"
-swellsight-evaluate = "scripts.evaluate:main"
-swellsight-serve = "scripts.serve:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

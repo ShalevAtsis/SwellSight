@@ -126,9 +126,9 @@ def main():
                 num_epochs = config.get('training', {}).get('num_epochs', 100)
             
             if hasattr(config, 'data'):
-                target_resolution = tuple(config.data.min_resolution)
+                target_resolution = tuple(config.data.target_resolution)
             else:
-                target_resolution = tuple(config.get('data', {}).get('target_resolution', [224, 224]))
+                target_resolution = tuple(config.get('data', {}).get('target_resolution', [518, 518]))
             
             # Create datasets
             train_dataset = WaveDataset(
