@@ -198,6 +198,12 @@ temp/
 ehthumbs.db
 Thumbs.db
 
+# Next.js web
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+
 # IDE specific
 .vscode/
 *.swp

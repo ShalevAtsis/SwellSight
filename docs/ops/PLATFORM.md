@@ -53,6 +53,14 @@ Optional header: `Idempotency-Key` on upload (24h Redis TTL).
 | `/ready` | Readiness (platform: DB+Redis; legacy: pipeline) |
 | `/api/v1/health` | Versioned health detail |
 
+## Web UI (P4)
+
+```bash
+cd web && cp .env.local.example .env.local && npm install && npm run dev
+```
+
+Set `CORS_ORIGINS=http://localhost:3000` on the API. See [web/README.md](../../web/README.md).
+
 ## Tests
 
 ```bash
